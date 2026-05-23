@@ -1,0 +1,1306 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
+  <meta name="theme-color" content="#F5F0E8"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
+  <meta name="apple-mobile-web-app-title" content="BTS代購"/>
+  <title>BTS 代購管理</title>
+  <link rel="manifest" href="manifest.json"/>
+  <link rel="apple-touch-icon" href="icon-192.png"/>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    html,body,#root{height:100%;margin:0;padding:0;background:#F5F0E8}
+    *{-webkit-tap-highlight-color:transparent}
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo } = React;
+
+const mkId = () => Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+const fmtDate = s => s ? new Date(s).toLocaleDateString("zh-TW",{month:"short",day:"numeric"}) : "—";
+
+/* ── 狀態定義 ── */
+const ITEM_STATUS = {
+  pending:        { label:"待訂購",     color:"rgba(50,40,30,0.3)",  bg:"rgba(50,40,30,0.04)" },
+  ordered:        { label:"已訂購",     color:"#5B8DB8",                bg:"rgba(91,141,184,0.12)"   },
+  packed:         { label:"已打包",     color:"rgba(255,220,100,0.85)", bg:"rgba(255,200,60,0.07)"  },
+  shipped_from:   { label:"已從集運寄出", color:"rgba(180,160,255,0.9)", bg:"rgba(140,100,255,0.07)" },
+  in_transit:     { label:"等待配送",   color:"rgba(100,210,230,0.9)",  bg:"rgba(60,180,200,0.07)"  },
+  arrived:        { label:"已到貨",     color:"#7DB87D",                bg:"rgba(125,184,125,0.08)" },
+  sent_to_client: { label:"已出貨給客人", color:"#5B8DB8",              bg:"rgba(91,141,184,0.14)"  },
+};
+
+const SHIP_STAGES = [
+  { id:"packed",       label:"已打包",     emoji:"📦" },
+  { id:"shipped_from", label:"已從集運寄出", emoji:"✈️" },
+  { id:"in_transit",   label:"等待配送",   emoji:"🚛" },
+  { id:"arrived",      label:"已到貨",     emoji:"✅" },
+];
+
+/* 預購訂單拿掉「規劃中」，狀態直接從運送單反映 */
+const PO_STAGES = [
+  { id:"ordered", label:"已下單", emoji:"🛒", color:"#5B8DB8",               bg:"rgba(91,141,184,0.12)"   },
+  { id:"paid",    label:"已付款", emoji:"💳", color:"rgba(180,160,255,0.9)", bg:"rgba(140,100,255,0.07)" },
+  { id:"arrived", label:"已到貨", emoji:"📦", color:"#7DB87D",               bg:"rgba(125,184,125,0.08)" },
+  { id:"done",    label:"完成",   emoji:"✅", color:"rgba(91,141,184,0.75)",  bg:"rgba(91,141,184,0.08)"  },
+];
+
+const getPOStage   = id => PO_STAGES.find(s=>s.id===id)   || PO_STAGES[0];
+const getShipStage = id => SHIP_STAGES.find(s=>s.id===id) || SHIP_STAGES[0];
+const getItemStatus= id => ITEM_STATUS[id] || ITEM_STATUS.pending;
+
+/* ── 空白模板 ── */
+const EMPTY_CO_ITEM = () => ({ id:mkId(), productId:"", series:"", spec:"", character:"", qty:1, price:"", status:"pending", poId:"" });
+const EMPTY_CO   = () => ({ id:"", customerIG:"", clientOrdered:false, items:[EMPTY_CO_ITEM()], notes:"", createdAt:"" });
+/* 移除 maiHuoBianId — 不再使用 */
+const EMPTY_PO   = () => ({ id:"", name:"", stage:"ordered", cardAmount:"", notes:"", linkedItems:[], createdAt:"" });
+const EMPTY_SHIP = () => ({ id:"", name:"", stage:"packed", shippingCost:"", poIds:[], notes:"", createdAt:"" });
+const EMPTY_PKG  = () => ({ id:"", name:"", amount:"", date:"", notes:"" });
+/* 商品庫: characters[], series[], products[] */
+const EMPTY_CHAR = () => ({ id:mkId(), name:"" });
+const EMPTY_SER  = () => ({ id:mkId(), name:"" });
+const EMPTY_PROD = () => ({ id:mkId(), seriesId:"", characterId:"", spec:"", price:"" });
+
+/* ════ APP ════ */
+function App() {
+  const [chars,    setChars]   = useState([]);
+  const [series,   setSeries]  = useState([]);
+  const [products, setProducts]= useState([]);
+  const [cos,      setCos]     = useState([]);
+  const [pos,      setPos]     = useState([]);
+  const [ships,    setShips]   = useState([]);
+  const [pkgs,     setPkgs]    = useState([]);
+  const [view,     setView]    = useState("dashboard");
+  const [modal,    setModal]   = useState(null);
+  const [loading,  setLoading] = useState(true);
+
+  useEffect(()=>{
+    (async()=>{
+      const entries = [
+        ["of_chars",    setChars],
+        ["of_series",   setSeries],
+        ["of_products", setProducts],
+        ["of_cos",      setCos],
+        ["of_pos",      setPos],
+        ["of_ships",    setShips],
+        ["of_pkgs",     setPkgs],
+      ];
+      for (const [k,fn] of entries) {
+        try { const r = await window.storage.get(k); if(r?.value) fn(JSON.parse(r.value)); } catch {}
+      }
+      setLoading(false);
+    })();
+  },[]);
+
+  const persist = async (k,d) => { try { await window.storage.set(k,JSON.stringify(d)); } catch {} };
+  const saveChars    = d => { setChars(d);    persist("of_chars",d); };
+  const saveSeries   = d => { setSeries(d);   persist("of_series",d); };
+  const saveProducts = d => { setProducts(d); persist("of_products",d); };
+  const saveCos      = d => { setCos(d);      persist("of_cos",d); };
+  const savePos      = d => { setPos(d);      persist("of_pos",d); };
+  const saveShips    = d => { setShips(d);    persist("of_ships",d); };
+  const savePkgs     = d => { setPkgs(d);     persist("of_pkgs",d); };
+
+  /* 商品展開名稱 */
+  const expandProduct = p => {
+    const ser = series.find(s=>s.id===p.seriesId)?.name||"";
+    const chr = chars.find(c=>c.id===p.characterId)?.name||"";
+    return [ser, p.spec, chr].filter(Boolean).join(" · ");
+  };
+
+  /* 儲存客戶訂單 */
+  const saveCo = co => {
+    const id = co.id||mkId();
+    const final = {...co, id, createdAt:co.createdAt||new Date().toISOString()};
+    saveCos(co.id ? cos.map(c=>c.id===id?final:c) : [...cos,final]);
+    setModal(null);
+  };
+
+  /* 儲存預購訂單 */
+  const savePo = po => {
+    const id = po.id||mkId();
+    const final = {...po, id, createdAt:po.createdAt||new Date().toISOString()};
+    const oldPo = pos.find(p=>p.id===id);
+    const oldLinked = oldPo?.linkedItems||[];
+    const newLinked = po.linkedItems||[];
+    let updCos = [...cos];
+    oldLinked.forEach(li=>{
+      if(!newLinked.find(n=>n.coId===li.coId&&n.itemId===li.itemId))
+        updCos = updCos.map(c=>c.id===li.coId?{...c,items:c.items.map(i=>i.id===li.itemId?{...i,status:"pending",poId:""}:i)}:c);
+    });
+    newLinked.forEach(li=>{
+      updCos = updCos.map(c=>c.id===li.coId?{...c,items:c.items.map(i=>i.id===li.itemId?{...i,status:"ordered",poId:id}:i)}:c);
+    });
+    saveCos(updCos);
+    savePos(po.id ? pos.map(p=>p.id===id?final:p) : [...pos,final]);
+    setModal(null);
+  };
+
+  /* 儲存運送單 + 更新所有相關商品行狀態 */
+  const saveShip = ship => {
+    const id = ship.id||mkId();
+    const final = {...ship, id, createdAt:ship.createdAt||new Date().toISOString()};
+    const oldShip = ships.find(s=>s.id===id);
+    const oldPoIds = oldShip?.poIds||[];
+    const allPoIds = [...new Set([...oldPoIds,...ship.poIds])];
+    let updCos = [...cos];
+    allPoIds.forEach(poId=>{
+      const po = pos.find(p=>p.id===poId);
+      if(!po) return;
+      const inNew = ship.poIds.includes(poId);
+      (po.linkedItems||[]).forEach(li=>{
+        updCos = updCos.map(c=>c.id===li.coId?{...c,items:c.items.map(i=>{
+          if(i.id!==li.itemId) return i;
+          if(!inNew) return i.status==="sent_to_client"?i:{...i,status:"ordered"};
+          if(i.status==="sent_to_client") return i;
+          return {...i,status:ship.stage};
+        })}:c);
+      });
+    });
+    let updPos = [...pos];
+    if(ship.stage==="arrived")
+      ship.poIds.forEach(poId=>{ updPos=updPos.map(p=>p.id===poId&&p.stage!=="done"?{...p,stage:"arrived"}:p); });
+    saveCos(updCos);
+    savePos(updPos);
+    saveShips(ship.id ? ships.map(s=>s.id===id?final:s) : [...ships,final]);
+    setModal(null);
+  };
+
+  /* 直接更新運送單狀態（不開編輯） */
+  const updateShipStage = (shipId, stage) => {
+    const ship = ships.find(s=>s.id===shipId);
+    if(!ship) return;
+    saveShip({...ship, stage});
+  };
+
+  const markItemSent = (coId,itemId) => saveCos(cos.map(c=>c.id===coId?{...c,items:c.items.map(i=>i.id===itemId?{...i,status:"sent_to_client"}:i)}:c));
+  const toggleClientOrdered = co => saveCos(cos.map(c=>c.id===co.id?{...c,clientOrdered:!c.clientOrdered}:c));
+
+  const deleteCo = id => {
+    if(!window.confirm("確定刪除此客戶訂單？")) return;
+    saveCos(cos.filter(c=>c.id!==id));
+    savePos(pos.map(p=>({...p,linkedItems:(p.linkedItems||[]).filter(li=>li.coId!==id)})));
+  };
+  const deletePo = id => {
+    if(!window.confirm("確定刪除此預購訂單？")) return;
+    const po = pos.find(p=>p.id===id);
+    let updCos=[...cos];
+    (po?.linkedItems||[]).forEach(li=>{
+      updCos=updCos.map(c=>c.id===li.coId?{...c,items:c.items.map(i=>i.id===li.itemId?{...i,status:"pending",poId:""}:i)}:c);
+    });
+    saveCos(updCos);
+    savePos(pos.filter(p=>p.id!==id));
+    saveShips(ships.map(s=>({...s,poIds:(s.poIds||[]).filter(pid=>pid!==id)})));
+  };
+  const deleteShip = id => {
+    if(!window.confirm("確定刪除此運送單？")) return;
+    const ship = ships.find(s=>s.id===id);
+    let updCos=[...cos];
+    (ship?.poIds||[]).forEach(poId=>{
+      const po=pos.find(p=>p.id===poId);
+      (po?.linkedItems||[]).forEach(li=>{
+        updCos=updCos.map(c=>c.id===li.coId?{...c,items:c.items.map(i=>i.id===li.itemId&&i.status!=="sent_to_client"?{...i,status:"ordered"}:i)}:c);
+      });
+    });
+    saveCos(updCos);
+    saveShips(ships.filter(s=>s.id!==id));
+  };
+
+  /* 利潤 */
+  const totalRevenue  = useMemo(()=>cos.reduce((s,c)=>(c.items||[]).reduce((ss,i)=>ss+(parseFloat(i.price)*parseInt(i.qty||1)||0),s),0),[cos]);
+  const totalPoCost   = useMemo(()=>pos.reduce((s,p)=>s+(parseFloat(p.cardAmount)||0),0),[pos]);
+  const totalShipCost = useMemo(()=>ships.reduce((s,sh)=>s+(parseFloat(sh.shippingCost)||0),0),[ships]);
+  const totalPkgCost  = useMemo(()=>pkgs.reduce((s,pk)=>s+(parseFloat(pk.amount)||0),0),[pkgs]);
+  const totalCost = totalPoCost+totalShipCost+totalPkgCost;
+  const totalProfit = totalRevenue-totalCost;
+
+  if(loading) return <div style={{height:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#F5F0E8",color:"#5B8DB8",fontSize:13,letterSpacing:"3px"}}>◈ 載入中…</div>;
+
+  const NAV = [
+    {id:"dashboard", label:"總覽",     icon:"◈"},
+    {id:"customer",  label:"客戶訂單", icon:"◇"},
+    {id:"purchase",  label:"預購訂單", icon:"◻"},
+    {id:"shipment",  label:"運送單",   icon:"△"},
+    {id:"products",  label:"商品管理", icon:"✦"},
+    {id:"packaging", label:"包材成本", icon:"◎"},
+  ];
+
+  return (
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=DM+Sans:wght@300;400;500;600&display=swap');
+        *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+        body,input,select,textarea,button{font-family:'DM Sans',sans-serif}
+        button{cursor:pointer}
+        ::-webkit-scrollbar{width:4px;height:4px}
+        ::-webkit-scrollbar-thumb{background:#2A2A2A;border-radius:2px}
+        ::-webkit-scrollbar-track{background:transparent}
+        input:focus,select:focus,textarea:focus{outline:none;border-bottom-color:#5B8DB8 !important}
+        input,select,textarea{color-scheme:light}
+        select option{background:#F0EBE0;color:rgba(50,40,30,0.85)}
+      `}</style>
+
+      <div style={{display:"flex",flexDirection:"column",height:"100vh",background:"#F5F0E8",overflow:"hidden"}}>
+
+        {/* ── 頂部標題列 ── */}
+        <header style={{background:"#EDE8DE",borderBottom:"1px solid #1E1E1E",padding:"14px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
+          <div>
+            <div style={{fontFamily:"'Cormorant Garamond',serif",fontWeight:600,fontSize:18,color:"#5B8DB8",letterSpacing:"3px",textTransform:"uppercase",lineHeight:1}}>BTS</div>
+            <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:9,color:"rgba(91,141,184,0.4)",letterSpacing:"4px",textTransform:"uppercase",marginTop:2}}>代購管理</div>
+          </div>
+          <div style={{display:"flex",gap:6}}>
+            <button onClick={()=>setModal({type:"co",data:null})} style={{padding:"7px 14px",border:"none",background:"#5B8DB8",color:"#F5F0E8",fontSize:11,fontWeight:700,letterSpacing:"1px",textTransform:"uppercase"}}>
+              ＋ 客戶</button>
+            <button onClick={()=>setModal({type:"po",data:null})} style={{padding:"7px 14px",border:"1px solid #2A2A2A",background:"transparent",color:"rgba(91,141,184,0.65)",fontSize:11,fontWeight:600,letterSpacing:"1px",textTransform:"uppercase"}}>
+              ＋ 預購</button>
+          </div>
+        </header>
+
+        {/* ── 主內容 ── */}
+        <main style={{flex:1,overflow:"auto",padding:"20px 16px",background:"#F5F0E8"}}>
+          {view==="dashboard" && <DashboardView cos={cos} pos={pos} ships={ships} pkgs={pkgs} totalRevenue={totalRevenue} totalCost={totalCost} totalProfit={totalProfit} totalPoCost={totalPoCost} totalShipCost={totalShipCost} totalPkgCost={totalPkgCost}/>}
+          {view==="customer"  && <ClientOrdersView cos={cos} pos={pos} ships={ships} onToggleOrdered={toggleClientOrdered} onMarkSent={markItemSent} onEdit={c=>setModal({type:"co",data:{...c,items:c.items.map(i=>({...i}))}})} onDelete={deleteCo} onNew={()=>setModal({type:"co",data:null})}/>}
+          {view==="purchase"  && <PreOrdersView pos={pos} cos={cos} ships={ships} onEdit={p=>setModal({type:"po",data:{...p,linkedItems:[...(p.linkedItems||[])].map(l=>({...l}))}})} onDelete={deletePo} onNew={()=>setModal({type:"po",data:null})}/>}
+          {view==="shipment"  && <ShipmentView ships={ships} pos={pos} onEdit={s=>setModal({type:"ship",data:{...s,poIds:[...(s.poIds||[])]}})} onDelete={deleteShip} onNew={()=>setModal({type:"ship",data:null})} onStageChange={updateShipStage}/>}
+          {view==="products"  && <ProductsView chars={chars} series={series} products={products} saveChars={saveChars} saveSeries={saveSeries} saveProducts={saveProducts} expandProduct={expandProduct}/>}
+          {view==="packaging" && <PackagingView pkgs={pkgs} savePkgs={savePkgs}/>}
+        </main>
+
+        {/* ── 底部 Tab Bar ── */}
+        <nav style={{background:"#EDE8DE",borderTop:"1px solid #1E1E1E",display:"flex",flexShrink:0,paddingBottom:"env(safe-area-inset-bottom)"}}>
+          {NAV.map(n=>(
+            <button key={n.id} onClick={()=>setView(n.id)} style={{
+              flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+              gap:3,padding:"10px 4px",border:"none",
+              borderTop:view===n.id?"2px solid #C9A84C":"2px solid transparent",
+              background:view===n.id?"rgba(201,168,76,0.06)":"transparent",
+              color:view===n.id?"#5B8DB8":"rgba(50,40,30,0.28)",
+              transition:"all 0.15s",
+            }}>
+              <span style={{fontSize:16,lineHeight:1}}>{n.icon}</span>
+              <span style={{fontSize:9,fontWeight:view===n.id?700:400,letterSpacing:"0.3px",whiteSpace:"nowrap"}}>{n.label}</span>
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {modal?.type==="co"   && <CoModal   order={modal.data} products={products} chars={chars} series={series} expandProduct={expandProduct} onSave={saveCo}  onClose={()=>setModal(null)}/>}
+      {modal?.type==="po"   && <PoModal   po={modal.data}    cos={cos}           expandProduct={expandProduct} onSave={savePo}  onClose={()=>setModal(null)}/>}
+      {modal?.type==="ship" && <ShipModal ship={modal.data}  pos={pos} ships={ships} onSave={saveShip} onClose={()=>setModal(null)}/>}
+    </>
+  );
+}
+
+/* ════ 總覽 ════ */
+function DashboardView({cos,pos,ships,pkgs,totalRevenue,totalCost,totalProfit,totalPoCost,totalShipCost,totalPkgCost}) {
+  const recentCos = [...cos].sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).slice(0,5);
+  const activeShips = ships.filter(s=>s.stage!=="arrived");
+  return (
+    <div>
+      <PageHeader title="總覽" sub="整體業務摘要"/>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:1,marginBottom:1,border:"1px solid #1E1E1E"}}>
+        {[
+          {label:"REVENUE", val:`$${totalRevenue.toFixed(0)}`, sub:`${cos.length} 筆客戶訂單`, accent:"#5B8DB8"},
+          {label:"COST",    val:`$${totalCost.toFixed(0)}`,    sub:"代購＋運費＋包材",          accent:"rgba(50,40,30,0.4)"},
+          {label:"PROFIT",  val:`$${totalProfit.toFixed(0)}`,  sub:"收入 − 所有成本",          accent:totalProfit>=0?"#7DB87D":"#CC6666"},
+        ].map((s,i)=>(
+          <div key={s.label} style={{background:"#FFFCF7",padding:"20px 22px",borderRight:i<2?"1px solid #1E1E1E":"none"}}>
+            <div style={{fontSize:9,color:"rgba(91,141,184,0.45)",fontWeight:600,letterSpacing:"3px",marginBottom:10}}>{s.label}</div>
+            <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:28,fontWeight:600,color:s.accent}}>{s.val}</div>
+            <div style={{fontSize:11,color:"rgba(50,40,30,0.2)",marginTop:5}}>{s.sub}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:1,marginBottom:20,border:"1px solid #1E1E1E",borderTop:"none"}}>
+        {[
+          {label:"代購金額", val:`$${totalPoCost.toFixed(0)}`,   sub:`${pos.length} 筆預購單`,   icon:"◻"},
+          {label:"運費成本", val:`$${totalShipCost.toFixed(0)}`,  sub:`${ships.length} 筆運送單`,  icon:"△"},
+          {label:"包材成本", val:`$${totalPkgCost.toFixed(0)}`,   sub:`${pkgs.length} 筆紀錄`,    icon:"◎"},
+        ].map((s,i)=>(
+          <div key={s.label} style={{background:"#EDE8DE",padding:"14px 22px",borderRight:i<2?"1px solid #1E1E1E":"none"}}>
+            <div style={{fontSize:10,color:"rgba(91,141,184,0.4)",fontWeight:600,letterSpacing:"1.5px",marginBottom:5}}>{s.icon} {s.label}</div>
+            <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:20,fontWeight:500,color:"rgba(50,40,30,0.5)"}}>{s.val}</div>
+            <div style={{fontSize:10,color:"rgba(50,40,30,0.15)",marginTop:3}}>{s.sub}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <div style={{background:"#EDE8DE",border:"1px solid #1E1E1E",padding:"18px 20px"}}>
+          <SectionTitle>◇ 最近客戶訂單</SectionTitle>
+          <div style={{marginTop:12,display:"flex",flexDirection:"column",gap:4}}>
+            {recentCos.length===0&&<Empty small>尚無訂單</Empty>}
+            {recentCos.map(c=>{
+              const total=(c.items||[]).reduce((s,i)=>s+(parseFloat(i.price)*parseInt(i.qty||1)||0),0);
+              return <div key={c.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:"#F5F0E8",borderLeft:"2px solid #2A2A2A"}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontWeight:600,fontSize:12,color:"rgba(50,40,30,0.78)",letterSpacing:"0.3px"}}>@{c.customerIG||"?"}</div>
+                  <div style={{fontSize:10,color:"rgba(50,40,30,0.2)",marginTop:1}}>{(c.items||[]).length} 件商品</div>
+                </div>
+                <span style={{fontFamily:"'Cormorant Garamond',serif",fontSize:14,fontWeight:600,color:"#5B8DB8",flexShrink:0}}>${total.toFixed(0)}</span>
+              </div>;
+            })}
+          </div>
+        </div>
+        <div style={{background:"#EDE8DE",border:"1px solid #1E1E1E",padding:"18px 20px"}}>
+          <SectionTitle>△ 進行中運送單</SectionTitle>
+          <div style={{marginTop:12,display:"flex",flexDirection:"column",gap:4}}>
+            {activeShips.length===0&&<Empty small>無進行中運送</Empty>}
+            {activeShips.map(s=>{
+              const st=getShipStage(s.stage);
+              return <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:"#F5F0E8",borderLeft:"2px solid #C9A84C"}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontWeight:600,fontSize:12,color:"rgba(50,40,30,0.78)"}}>{s.name||"未命名"}</div>
+                  <div style={{fontSize:10,color:"rgba(91,141,184,0.55)",marginTop:1}}>{st.label}</div>
+                </div>
+                <span style={{fontSize:11,color:"rgba(50,40,30,0.2)"}}>{(s.poIds||[]).length} 筆</span>
+              </div>;
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ════ 客戶訂單 ════ */
+function ClientOrdersView({cos,pos,onToggleOrdered,onMarkSent,onEdit,onDelete,onNew}) {
+  const [search,setSearch]=useState("");
+  const filtered=cos.filter(c=>!search||c.customerIG?.toLowerCase().includes(search.toLowerCase()));
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18}}>
+        <PageHeader title="客戶訂單" sub={`共 ${filtered.length} 筆`}/>
+        <GoldBtn onClick={onNew}>+ 新增訂單</GoldBtn>
+      </div>
+      <UnderlineInput value={search} onChange={e=>setSearch(e.target.value)} placeholder="搜尋 IG 帳號…" style={{marginBottom:16,width:240}}/>
+      {filtered.length===0?<Empty>尚無客戶訂單</Empty>
+        :<div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {filtered.map(c=><CoCard key={c.id} co={c} pos={pos} onToggleOrdered={()=>onToggleOrdered(c)} onMarkSent={onMarkSent} onEdit={()=>onEdit(c)} onDelete={()=>onDelete(c.id)}/>)}
+        </div>}
+    </div>
+  );
+}
+
+function CoCard({co,pos,onToggleOrdered,onMarkSent,onEdit,onDelete}) {
+  const total=(co.items||[]).reduce((s,i)=>s+(parseFloat(i.price)*parseInt(i.qty||1)||0),0);
+  const itemPo=itemId=>{
+    const item=co.items.find(i=>i.id===itemId);
+    return item?.poId?pos.find(p=>p.id===item.poId)||null:null;
+  };
+  return (
+    <div style={{background:"#FFFCF7",border:"1px solid #1E1E1E",overflow:"hidden"}}>
+      <div style={{padding:"12px 16px",display:"flex",alignItems:"center",gap:12}}>
+        <div style={{width:34,height:34,background:"#DDD8CE",border:"1px solid #2A2A2A",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:"#5B8DB8",flexShrink:0}}>
+          {(co.customerIG||"?").charAt(0).toUpperCase()}
+        </div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontWeight:600,fontSize:13,color:"rgba(50,40,30,0.9)",letterSpacing:"0.2px"}}>@{co.customerIG||"未填"}</div>
+          <div style={{fontSize:11,color:"rgba(50,40,30,0.25)",marginTop:1}}>{(co.items||[]).length} 件 · {fmtDate(co.createdAt)}</div>
+        </div>
+        <button onClick={onToggleOrdered} style={{padding:"4px 10px",fontSize:11,fontWeight:600,cursor:"pointer",
+          background:co.clientOrdered?"rgba(125,184,125,0.12)":"rgba(50,40,30,0.04)",
+          border:co.clientOrdered?"1px solid rgba(125,184,125,0.3)":"1px solid #2A2A2A",
+          color:co.clientOrdered?"#7DB87D":"rgba(50,40,30,0.3)"}}>
+          {co.clientOrdered?"✓ 客人已下單":"待客人下單"}
+        </button>
+        <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:16,fontWeight:600,color:"#5B8DB8",flexShrink:0}}>${total.toFixed(0)}</div>
+        <div style={{display:"flex",gap:5,flexShrink:0}}>
+          <Btn onClick={onEdit}>編輯</Btn>
+          <Btn danger onClick={onDelete}>✕</Btn>
+        </div>
+      </div>
+      {/* 商品細項 — 預設展開 */}
+      <div style={{borderTop:"1px solid #1E1E1E",padding:"10px 16px",display:"flex",flexDirection:"column",gap:5,background:"#F5F0E8"}}>
+        {(co.items||[]).map(item=>{
+          const st=getItemStatus(item.status||"pending");
+          const po=itemPo(item.id);
+          const canSend=item.status==="arrived";
+          return (
+            <div key={item.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:"#FFFCF7",borderLeft:"2px solid #1E1E1E"}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:12,fontWeight:600,color:"rgba(50,40,30,0.78)"}}>
+                  {[item.series,item.spec,item.character].filter(Boolean).join(" · ")||"商品"}
+                  <span style={{color:"rgba(50,40,30,0.2)"}}> ×{item.qty||1}</span>
+                </div>
+                {po&&<div style={{fontSize:10,color:"rgba(91,141,184,0.55)",marginTop:1}}>◻ {po.name}</div>}
+              </div>
+              <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:13,fontWeight:600,color:"#5B8DB8",flexShrink:0}}>${(parseFloat(item.price)*parseInt(item.qty||1)||0).toFixed(0)}</div>
+              <span style={{background:st.bg,color:st.color,fontSize:10,fontWeight:600,padding:"3px 9px",whiteSpace:"nowrap",flexShrink:0}}>{st.label}</span>
+              {canSend&&<button onClick={()=>onMarkSent(co.id,item.id)} style={{padding:"3px 10px",border:"1px solid #C9A84C",background:"transparent",color:"#5B8DB8",fontSize:10,fontWeight:600,flexShrink:0,letterSpacing:"0.5px"}}>已出貨 ✓</button>}
+            </div>
+          );
+        })}
+        {co.notes&&<div style={{fontSize:11,color:"rgba(50,40,30,0.2)",paddingTop:6}}>備註：{co.notes}</div>}
+      </div>
+    </div>
+  );
+}
+
+/* ════ 預購訂單 ════ */
+function PreOrdersView({pos,cos,ships,onEdit,onDelete,onNew}) {
+  const [search,setSearch]=useState("");
+  const [filter,setFilter]=useState("all");
+  const filtered=pos.filter(p=>(filter==="all"||p.stage===filter)&&(!search||(p.name||"").toLowerCase().includes(search.toLowerCase())));
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18}}>
+        <PageHeader title="預購訂單" sub={`共 ${filtered.length} 筆`}/>
+        <GoldBtn onClick={onNew}>+ 新增預購</GoldBtn>
+      </div>
+      <div style={{display:"flex",gap:12,marginBottom:16,flexWrap:"wrap",alignItems:"flex-end"}}>
+        <UnderlineInput value={search} onChange={e=>setSearch(e.target.value)} placeholder="搜尋預購單名稱…" style={{width:220}}/>
+        <select value={filter} onChange={e=>setFilter(e.target.value)}
+          style={{padding:"6px 10px",border:"none",borderBottom:"1px solid #2A2A2A",fontSize:12,background:"transparent",color:"rgba(50,40,30,0.6)",outline:"none"}}>
+          <option value="all">全部狀態</option>
+          {PO_STAGES.map(s=><option key={s.id} value={s.id}>{s.emoji} {s.label}</option>)}
+        </select>
+      </div>
+      {filtered.length===0?<Empty>尚無預購訂單</Empty>
+        :<div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {filtered.map(p=><PoCard key={p.id} po={p} cos={cos} ships={ships} onEdit={()=>onEdit(p)} onDelete={()=>onDelete(p.id)}/>)}
+        </div>}
+    </div>
+  );
+}
+
+function PoCard({po,cos,ships,onEdit,onDelete}) {
+  const [expanded,setExpanded]=useState(false);
+  const stage=getPOStage(po.stage);
+  const ship=ships.find(s=>(s.poIds||[]).includes(po.id));
+  const linkedItems=po.linkedItems||[];
+  return (
+    <div style={{background:"#FFFCF7",border:"1px solid #1E1E1E",overflow:"hidden"}}>
+      <div style={{padding:"12px 16px",display:"flex",alignItems:"center",gap:12}}>
+        <div style={{width:34,height:34,background:stage.bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>
+          {stage.emoji}
+        </div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontWeight:600,fontSize:13,color:"rgba(50,40,30,0.85)",letterSpacing:"0.2px"}}>{po.name||"未命名預購單"}</div>
+          <div style={{fontSize:11,color:"rgba(50,40,30,0.25)",marginTop:1}}>
+            {linkedItems.length} 件商品
+            {ship&&<span style={{color:"rgba(180,160,255,0.6)"}}> · {getShipStage(ship.stage).emoji} {getShipStage(ship.stage).label}</span>}
+          </div>
+        </div>
+        <span style={{background:stage.bg,color:stage.color,fontSize:10,fontWeight:600,padding:"3px 10px",letterSpacing:"0.5px"}}>{stage.emoji} {stage.label}</span>
+        <div style={{textAlign:"right",flexShrink:0}}>
+          <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:16,fontWeight:600,color:"#5B8DB8"}}>${(parseFloat(po.cardAmount)||0).toFixed(0)}</div>
+          <div style={{fontSize:9,color:"rgba(91,141,184,0.4)",letterSpacing:"1px",textTransform:"uppercase"}}>刷卡金額</div>
+        </div>
+        <div style={{display:"flex",gap:5,flexShrink:0}}>
+          <Btn onClick={()=>setExpanded(e=>!e)}>{expanded?"收起":"展開"}</Btn>
+          <Btn onClick={onEdit}>編輯</Btn>
+          <Btn danger onClick={onDelete}>✕</Btn>
+        </div>
+      </div>
+      {expanded&&linkedItems.length>0&&(
+        <div style={{borderTop:"1px solid #1E1E1E",padding:"10px 16px",display:"flex",flexDirection:"column",gap:4,background:"#F5F0E8"}}>
+          <div style={{fontSize:9,fontWeight:600,color:"rgba(91,141,184,0.45)",marginBottom:4,letterSpacing:"2px",textTransform:"uppercase"}}>已串聯商品行</div>
+          {linkedItems.map(li=>{
+            const co=cos.find(c=>c.id===li.coId);
+            const item=co?.items?.find(i=>i.id===li.itemId);
+            if(!co||!item) return null;
+            return <div key={li.itemId} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:"#FFFCF7",borderLeft:"2px solid #2A2A2A",fontSize:12}}>
+              <span style={{color:"rgba(50,40,30,0.72)",fontWeight:600}}>@{co.customerIG}</span>
+              <span style={{color:"rgba(50,40,30,0.15)"}}>·</span>
+              <span style={{color:"rgba(50,40,30,0.45)"}}>{[item.series,item.spec,item.character].filter(Boolean).join(" / ")||"商品"}</span>
+              <span style={{color:"rgba(50,40,30,0.2)"}}>×{item.qty||1}</span>
+            </div>;
+          })}
+          {po.notes&&<div style={{fontSize:11,color:"rgba(50,40,30,0.2)",paddingTop:6}}>備註：{po.notes}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ════ 運送單 ════ */
+function ShipmentView({ships,pos,onEdit,onDelete,onNew,onStageChange}) {
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18}}>
+        <PageHeader title="運送單" sub="點擊狀態標籤直接切換進度"/>
+        <GoldBtn onClick={onNew}>+ 新增運送單</GoldBtn>
+      </div>
+      {ships.length===0?<Empty>尚無運送單</Empty>
+        :<div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {ships.map(s=><ShipCard key={s.id} ship={s} pos={pos} onEdit={()=>onEdit(s)} onDelete={()=>onDelete(s.id)} onStageChange={stage=>onStageChange(s.id,stage)}/>)}
+        </div>}
+    </div>
+  );
+}
+
+function ShipCard({ship,pos,onEdit,onDelete,onStageChange}) {
+  const [expanded,setExpanded]=useState(false);
+  const st=getShipStage(ship.stage);
+  const linkedPos=pos.filter(p=>(ship.poIds||[]).includes(p.id));
+  const stageColors={packed:"rgba(255,220,100,0.85)",shipped_from:"rgba(180,160,255,0.85)",in_transit:"rgba(100,210,230,0.85)",arrived:"#7DB87D"};
+  const stageBgs={packed:"rgba(91,141,184,0.09)",shipped_from:"rgba(140,100,255,0.08)",in_transit:"rgba(60,180,200,0.08)",arrived:"rgba(125,184,125,0.08)"};
+  const curIdx=SHIP_STAGES.findIndex(s=>s.id===ship.stage);
+  return (
+    <div style={{background:"#FFFCF7",border:"1px solid #1E1E1E",overflow:"hidden"}}>
+      <div style={{padding:"12px 16px",display:"flex",alignItems:"center",gap:12}}>
+        <div style={{width:34,height:34,background:stageBgs[ship.stage]||"rgba(50,40,30,0.04)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>
+          {st.emoji}
+        </div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontWeight:600,fontSize:13,color:"rgba(50,40,30,0.85)",letterSpacing:"0.2px"}}>{ship.name||"未命名運送單"}</div>
+          <div style={{fontSize:11,color:"rgba(50,40,30,0.25)",marginTop:1}}>{linkedPos.length} 筆預購 · {fmtDate(ship.createdAt)}</div>
+        </div>
+
+        {/* 直接點選切換狀態 */}
+        <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+          {SHIP_STAGES.map((s,i)=>{
+            const isCurrent=s.id===ship.stage;
+            const isPast=i<curIdx;
+            return (
+              <button key={s.id} onClick={()=>onStageChange(s.id)} style={{
+                padding:"4px 8px",fontSize:10,fontWeight:600,letterSpacing:"0.3px",
+                border:isCurrent?`1px solid ${stageColors[s.id]||"#5B8DB8"}`:"1px solid #2A2A2A",
+                background:isCurrent?stageBgs[s.id]||"rgba(91,141,184,0.09)":isPast?"rgba(50,40,30,0.02)":"transparent",
+                color:isCurrent?(stageColors[s.id]||"#5B8DB8"):isPast?"rgba(50,40,30,0.2)":"rgba(50,40,30,0.3)",
+                cursor:"pointer",whiteSpace:"nowrap",
+              }}>{s.emoji} {s.label}</button>
+            );
+          })}
+        </div>
+
+        <div style={{textAlign:"right",flexShrink:0}}>
+          <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:16,fontWeight:600,color:"#5B8DB8"}}>${(parseFloat(ship.shippingCost)||0).toFixed(0)}</div>
+          <div style={{fontSize:9,color:"rgba(91,141,184,0.4)",letterSpacing:"1px",textTransform:"uppercase"}}>運費</div>
+        </div>
+        <div style={{display:"flex",gap:5,flexShrink:0}}>
+          <Btn onClick={()=>setExpanded(e=>!e)}>{expanded?"收起":"展開"}</Btn>
+          <Btn onClick={onEdit}>編輯</Btn>
+          <Btn danger onClick={onDelete}>✕</Btn>
+        </div>
+      </div>
+      {expanded&&(
+        <div style={{borderTop:"1px solid #1E1E1E",padding:"10px 16px",background:"#F5F0E8"}}>
+          {linkedPos.length>0&&(
+            <div>
+              <div style={{fontSize:9,fontWeight:600,color:"rgba(91,141,184,0.45)",marginBottom:6,letterSpacing:"2px",textTransform:"uppercase"}}>串聯預購單</div>
+              {linkedPos.map(p=>(
+                <div key={p.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:"#FFFCF7",borderLeft:"2px solid #2A2A2A",fontSize:12,marginBottom:4}}>
+                  <span style={{color:"rgba(50,40,30,0.72)",fontWeight:600}}>{p.name||"未命名"}</span>
+                  <span style={{color:"rgba(91,141,184,0.55)"}}>· ${(parseFloat(p.cardAmount)||0).toFixed(0)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {ship.notes&&<div style={{fontSize:11,color:"rgba(50,40,30,0.2)",paddingTop:6}}>備註：{ship.notes}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ════ 商品管理（方向A：角色庫 + 系列庫 + 商品） ════ */
+function ProductsView({chars,series,products,saveChars,saveSeries,saveProducts,expandProduct}) {
+  const [tab,setTab]=useState("products"); // products | chars | series
+  return (
+    <div>
+      <PageHeader title="商品管理" sub="維護角色庫、系列庫，再組合成商品"/>
+      {/* Tab 切換 */}
+      <div style={{display:"flex",gap:0,marginBottom:20,borderBottom:"1px solid #1E1E1E"}}>
+        {[{id:"products",label:"商品"},  {id:"chars",label:"角色庫"}, {id:"series",label:"系列庫"}].map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{
+            padding:"8px 18px",fontSize:12,fontWeight:tab===t.id?700:400,letterSpacing:"0.5px",
+            border:"none",borderBottom:tab===t.id?"2px solid #C9A84C":"2px solid transparent",
+            background:"transparent",color:tab===t.id?"#5B8DB8":"rgba(50,40,30,0.3)",
+            marginBottom:"-1px",
+          }}>{t.label}</button>
+        ))}
+      </div>
+      {tab==="chars"    && <LibraryEditor title="角色庫" items={chars}  save={saveChars}  placeholder="e.g. RJ、Koya、Shooky"/>}
+      {tab==="series"   && <LibraryEditor title="系列庫" items={series} save={saveSeries} placeholder="e.g. BT21 Summer 2025"/>}
+      {tab==="products" && <ProductsEditor chars={chars} series={series} products={products} saveProducts={saveProducts} expandProduct={expandProduct}/>}
+    </div>
+  );
+}
+
+/* 角色庫 / 系列庫 共用編輯器 — 支援批次新增 */
+function LibraryEditor({title,items,save,placeholder}) {
+  const [mode,setMode]=useState(null);       // null | "single" | "batch"
+  const [name,setName]=useState("");
+  const [batchText,setBatchText]=useState("");
+  const [editingId,setEditingId]=useState(null);
+  const [editName,setEditName]=useState("");
+
+  const cancelAll=()=>{setMode(null);setName("");setBatchText("");setEditingId(null);setEditName("");};
+
+  const saveSingle=()=>{
+    if(!name.trim()){alert("請填寫名稱");return;}
+    save([...items,{id:mkId(),name:name.trim()}]);
+    setName(""); // stay open for quick consecutive adds
+  };
+  const saveBatch=()=>{
+    const names=batchText.split(/[,，\n]/).map(s=>s.trim()).filter(Boolean);
+    if(!names.length){alert("請輸入至少一個名稱");return;}
+    const dupes=names.filter(n=>items.some(i=>i.name===n));
+    const fresh=names.filter(n=>!items.some(i=>i.name===n));
+    save([...items,...fresh.map(n=>({id:mkId(),name:n}))]);
+    setBatchText("");
+    if(dupes.length) alert(`已跳過重複項目：${dupes.join("、")}`);
+  };
+  const startEdit=item=>{setEditingId(item.id);setEditName(item.name);};
+  const saveEdit=()=>{
+    if(!editName.trim())return;
+    save(items.map(i=>i.id===editingId?{...i,name:editName.trim()}:i));
+    setEditingId(null);setEditName("");
+  };
+  const del=id=>{if(!window.confirm("確定刪除？"))return; save(items.filter(i=>i.id!==id));};
+
+  const inp={padding:"7px 10px",border:"none",borderBottom:"1px solid #2A2A2A",fontSize:12,outline:"none",color:"rgba(50,40,30,0.85)",background:"transparent",flex:1};
+
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <span style={{fontSize:11,color:"rgba(50,40,30,0.4)",letterSpacing:"0.5px"}}>{items.length} 項</span>
+        <div style={{display:"flex",gap:6}}>
+          <button onClick={()=>{setMode(mode==="single"?null:"single");setBatchText("");}} style={{
+            padding:"6px 12px",fontSize:11,fontWeight:600,letterSpacing:"0.5px",border:"1px solid #2A2A2A",
+            background:mode==="single"?"rgba(91,141,184,0.12)":"transparent",
+            color:mode==="single"?"#5B8DB8":"rgba(50,40,30,0.35)",
+          }}>+ 新增</button>
+          <button onClick={()=>{setMode(mode==="batch"?null:"batch");setName("");}} style={{
+            padding:"6px 12px",fontSize:11,fontWeight:600,letterSpacing:"0.5px",border:"1px solid #2A2A2A",
+            background:mode==="batch"?"rgba(91,141,184,0.12)":"transparent",
+            color:mode==="batch"?"#5B8DB8":"rgba(50,40,30,0.35)",
+          }}>批次新增</button>
+        </div>
+      </div>
+
+      {/* 單筆新增 */}
+      {mode==="single"&&(
+        <div style={{background:"#FFFCF7",border:"1px solid #2A2A2A",padding:"12px 14px",marginBottom:10}}>
+          <div style={{fontSize:9,color:"rgba(91,141,184,0.5)",letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:6}}>名稱（Enter 快速儲存）</div>
+          <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
+            <input value={name} onChange={e=>setName(e.target.value)} placeholder={placeholder} style={inp} autoFocus
+              onKeyDown={e=>{ if(e.key==="Enter") saveSingle(); if(e.key==="Escape") cancelAll(); }}/>
+            <Btn onClick={cancelAll}>關閉</Btn>
+            <Btn dark onClick={saveSingle}>儲存</Btn>
+          </div>
+          {name.trim()&&<div style={{fontSize:10,color:"rgba(50,40,30,0.2)",marginTop:6}}>按 Enter 快速儲存，可連續新增</div>}
+        </div>
+      )}
+
+      {/* 批次新增 */}
+      {mode==="batch"&&(
+        <div style={{background:"#FFFCF7",border:"1px solid #2A2A2A",padding:"12px 14px",marginBottom:10}}>
+          <div style={{fontSize:9,color:"rgba(91,141,184,0.5)",letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:6}}>批次輸入（逗號或換行分隔）</div>
+          <textarea value={batchText} onChange={e=>setBatchText(e.target.value)} placeholder={`例如：\nRJ\nKoya\nShooky\nMang\nChimmy\nTata\nVan`}
+            rows={6} style={{...inp,flex:"none",width:"100%",resize:"vertical",lineHeight:1.6,fontFamily:"'DM Sans',sans-serif"}}
+            autoFocus onKeyDown={e=>e.key==="Escape"&&cancelAll()}/>
+          {batchText.trim()&&(
+            <div style={{fontSize:10,color:"rgba(91,141,184,0.55)",marginTop:6}}>
+              將新增 {batchText.split(/[,，\n]/).map(s=>s.trim()).filter(Boolean).length} 個項目
+            </div>
+          )}
+          <div style={{display:"flex",gap:8,marginTop:10}}>
+            <Btn onClick={cancelAll}>取消</Btn>
+            <Btn dark onClick={saveBatch}>批次儲存</Btn>
+          </div>
+        </div>
+      )}
+
+      {items.length===0?<Empty>尚無{title}資料</Empty>
+        :<div style={{background:"#FFFCF7",border:"1px solid #1E1E1E",overflow:"hidden"}}>
+          {items.map((item,i)=>(
+            <div key={item.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 16px",borderBottom:i<items.length-1?"1px solid #1E1E1E":"none"}}>
+              {editingId===item.id
+                ?<><input value={editName} onChange={e=>setEditName(e.target.value)} style={{...inp,flex:1}} autoFocus
+                    onKeyDown={e=>{if(e.key==="Enter")saveEdit();if(e.key==="Escape"){setEditingId(null);setEditName("");}}}/>
+                  <Btn onClick={()=>{setEditingId(null);setEditName("");}}>取消</Btn>
+                  <Btn dark onClick={saveEdit}>儲存</Btn></>
+                :<><span style={{flex:1,fontSize:13,color:"rgba(50,40,30,0.85)",fontWeight:500}}>{item.name}</span>
+                  <Btn onClick={()=>startEdit(item)}>編輯</Btn>
+                  <Btn danger onClick={()=>del(item.id)}>✕</Btn></>
+              }
+            </div>
+          ))}
+        </div>}
+    </div>
+  );
+}
+
+/* 商品編輯器 — 組合批次新增 + 單筆編輯 */
+function ProductsEditor({chars,series,products,saveProducts,expandProduct}) {
+  const [mode,setMode]=useState(null); // null | "single" | "combo"
+  const [form,setForm]=useState(EMPTY_PROD());
+  const [combo,setCombo]=useState({seriesIds:[],charIds:[],spec:"",price:""});
+  const [search,setSearch]=useState("");
+  const [editingId,setEditingId]=useState(null);
+  const sf=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const toggleCombo=(key,id)=>setCombo(c=>({...c,[key]:c[key].includes(id)?c[key].filter(x=>x!==id):[...c[key],id]}));
+
+  const cancel=()=>{setMode(null);setForm(EMPTY_PROD());setCombo({seriesIds:[],charIds:[],spec:"",price:""});setEditingId(null);};
+
+  // 單筆儲存（角色非必填）
+  const saveSingle=()=>{
+    if(!form.seriesId){alert("請選擇系列");return;}
+    if(editingId) saveProducts(products.map(p=>p.id===editingId?{...form,id:editingId}:p));
+    else saveProducts([...products,{...form,id:mkId()}]);
+    cancel();
+  };
+
+  // 組合批次新增：所有系列 × 所有角色（或無角色）× 規格
+  const saveCombo=()=>{
+    if(!combo.seriesIds.length){alert("請至少選擇一個系列");return;}
+    const newProds=[];
+    combo.seriesIds.forEach(sId=>{
+      if(combo.charIds.length===0){
+        // 無角色版本
+        newProds.push({id:mkId(),seriesId:sId,characterId:"",spec:combo.spec,price:combo.price});
+      } else {
+        combo.charIds.forEach(cId=>{
+          newProds.push({id:mkId(),seriesId:sId,characterId:cId,spec:combo.spec,price:combo.price});
+        });
+      }
+    });
+    saveProducts([...products,...newProds]);
+    cancel();
+  };
+
+  const startEdit=p=>{setForm({...p});setEditingId(p.id);setMode("single");};
+  const del=id=>{if(!window.confirm("確定刪除此商品？"))return; saveProducts(products.filter(p=>p.id!==id));};
+
+  const filtered=products.filter(p=>{
+    if(!search) return true;
+    const s=series.find(s=>s.id===p.seriesId)?.name||"";
+    const c=chars.find(c=>c.id===p.characterId)?.name||"";
+    return [s,p.spec,c].some(x=>x.toLowerCase().includes(search.toLowerCase()));
+  });
+
+  const selStyle={padding:"7px 10px",border:"none",borderBottom:"1px solid #2A2A2A",fontSize:12,outline:"none",color:"rgba(50,40,30,0.78)",background:"transparent",width:"100%"};
+  const inp={padding:"7px 10px",border:"none",borderBottom:"1px solid #2A2A2A",fontSize:12,outline:"none",color:"rgba(50,40,30,0.85)",background:"transparent",width:"100%"};
+  const chipBtn=(active,onClick,label)=>(
+    <button onClick={onClick} style={{padding:"5px 11px",fontSize:11,fontWeight:active?600:400,border:active?"1px solid rgba(201,168,76,0.6)":"1px solid #2A2A2A",
+      background:active?"rgba(91,141,184,0.12)":"transparent",color:active?"#5B8DB8":"rgba(50,40,30,0.35)",cursor:"pointer",whiteSpace:"nowrap"}}>
+      {active?"✓ ":""}{label}</button>
+  );
+
+  // preview count
+  const previewCount = combo.seriesIds.length * (combo.charIds.length||1);
+
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <UnderlineInput value={search} onChange={e=>setSearch(e.target.value)} placeholder="搜尋系列／規格／角色…" style={{width:240}}/>
+        <div style={{display:"flex",gap:6}}>
+          <button onClick={()=>setMode(mode==="single"&&!editingId?null:"single")} style={{
+            padding:"6px 12px",fontSize:11,fontWeight:600,letterSpacing:"0.5px",border:"1px solid #2A2A2A",
+            background:mode==="single"?"rgba(91,141,184,0.12)":"transparent",
+            color:mode==="single"?"#5B8DB8":"rgba(50,40,30,0.35)",
+          }}>+ 單筆</button>
+          <button onClick={()=>setMode(mode==="combo"?null:"combo")} style={{
+            padding:"6px 12px",fontSize:11,fontWeight:600,letterSpacing:"0.5px",border:"1px solid #2A2A2A",
+            background:mode==="combo"?"rgba(91,141,184,0.12)":"transparent",
+            color:mode==="combo"?"#5B8DB8":"rgba(50,40,30,0.35)",
+          }}>組合批次</button>
+        </div>
+      </div>
+
+      {/* 單筆新增/編輯 */}
+      {mode==="single"&&(
+        <div style={{background:"#FFFCF7",border:"1px solid #2A2A2A",padding:"14px 16px",marginBottom:12}}>
+          <div style={{fontSize:9,color:"rgba(91,141,184,0.65)",letterSpacing:"2px",textTransform:"uppercase",marginBottom:12}}>
+            {editingId?"編輯商品":"新增單筆商品"}</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10,marginBottom:12}}>
+            <div>
+              <div style={{fontSize:9,color:"rgba(91,141,184,0.45)",letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:4}}>系列 *</div>
+              <select value={form.seriesId} onChange={e=>sf("seriesId",e.target.value)} style={selStyle}>
+                <option value="">選擇系列</option>
+                {series.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={{fontSize:9,color:"rgba(91,141,184,0.45)",letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:4}}>規格</div>
+              <input value={form.spec} onChange={e=>sf("spec",e.target.value)} placeholder="e.g. 扭蛋 / 公仔" style={inp}/>
+            </div>
+            <div>
+              <div style={{fontSize:9,color:"rgba(91,141,184,0.45)",letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:4}}>角色 <span style={{color:"rgba(50,40,30,0.2)",fontWeight:400,letterSpacing:0,textTransform:"none",fontSize:9}}>（選填）</span></div>
+              <select value={form.characterId} onChange={e=>sf("characterId",e.target.value)} style={selStyle}>
+                <option value="">無特定角色 / 團體</option>
+                {chars.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={{fontSize:9,color:"rgba(91,141,184,0.45)",letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:4}}>售價</div>
+              <input type="number" value={form.price} onChange={e=>sf("price",e.target.value)} placeholder="0" style={inp}/>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <Btn onClick={cancel}>取消</Btn>
+            <Btn dark onClick={saveSingle}>{editingId?"儲存變更":"新增"}</Btn>
+          </div>
+        </div>
+      )}
+
+      {/* 組合批次新增 */}
+      {mode==="combo"&&(
+        <div style={{background:"#FFFCF7",border:"1px solid #2A2A2A",padding:"14px 16px",marginBottom:12}}>
+          <div style={{fontSize:9,color:"rgba(91,141,184,0.65)",letterSpacing:"2px",textTransform:"uppercase",marginBottom:14}}>組合批次新增</div>
+
+          {series.length===0
+            ?<div style={{fontSize:12,color:"rgba(50,40,30,0.25)",marginBottom:12}}>請先到「系列庫」建立系列</div>
+            :<div style={{marginBottom:12}}>
+              <div style={{fontSize:9,color:"rgba(91,141,184,0.45)",letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:8}}>選擇系列（可多選）</div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                {series.map(s=>chipBtn(combo.seriesIds.includes(s.id),()=>toggleCombo("seriesIds",s.id),s.name))}
+              </div>
+            </div>}
+
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+            <div>
+              <div style={{fontSize:9,color:"rgba(91,141,184,0.45)",letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:4}}>規格</div>
+              <input value={combo.spec} onChange={e=>setCombo(c=>({...c,spec:e.target.value}))} placeholder="e.g. 扭蛋 / 吊飾" style={inp}/>
+            </div>
+            <div>
+              <div style={{fontSize:9,color:"rgba(91,141,184,0.45)",letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:4}}>售價</div>
+              <input type="number" value={combo.price} onChange={e=>setCombo(c=>({...c,price:e.target.value}))} placeholder="0" style={inp}/>
+            </div>
+          </div>
+
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:9,color:"rgba(91,141,184,0.45)",letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:8}}>
+              角色 <span style={{color:"rgba(50,40,30,0.2)",fontWeight:400,letterSpacing:0,textTransform:"none",fontSize:9}}>（選填，不選則為無特定角色/團體）</span>
+            </div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              {chars.map(c=>chipBtn(combo.charIds.includes(c.id),()=>toggleCombo("charIds",c.id),c.name))}
+              {chars.length===0&&<span style={{fontSize:12,color:"rgba(50,40,30,0.2)"}}>尚無角色資料</span>}
+            </div>
+          </div>
+
+          {/* 預覽 */}
+          {combo.seriesIds.length>0&&(
+            <div style={{background:"#F5F0E8",border:"1px solid #1E1E1E",padding:"10px 12px",marginBottom:12}}>
+              <div style={{fontSize:9,color:"rgba(91,141,184,0.45)",letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:6}}>
+                預覽 — 將新增 {previewCount} 筆</div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:4,maxHeight:80,overflow:"auto"}}>
+                {combo.seriesIds.flatMap(sId=>{
+                  const sName=series.find(s=>s.id===sId)?.name||"";
+                  if(combo.charIds.length===0) return [{sName,cName:"",spec:combo.spec}];
+                  return combo.charIds.map(cId=>({sName,cName:chars.find(c=>c.id===cId)?.name||"",spec:combo.spec}));
+                }).map((row,i)=>(
+                  <span key={i} style={{fontSize:10,color:"rgba(50,40,30,0.5)",background:"rgba(50,40,30,0.04)",padding:"2px 8px",border:"1px solid #2A2A2A"}}>
+                    {[row.sName,row.spec,row.cName].filter(Boolean).join(" · ")}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div style={{display:"flex",gap:8}}>
+            <Btn onClick={cancel}>取消</Btn>
+            <Btn dark onClick={saveCombo}>批次新增 {previewCount>0?`(${previewCount} 筆)`:""}</Btn>
+          </div>
+        </div>
+      )}
+
+      {series.length===0
+        ?<div style={{padding:"16px",background:"#FFFCF7",border:"1px solid #1E1E1E",fontSize:12,color:"rgba(91,141,184,0.55)"}}>
+          請先到「系列庫」分頁建立系列資料，再回來新增商品。</div>
+        :filtered.length===0?<Empty>尚無商品資料</Empty>
+        :<div style={{background:"#FFFCF7",border:"1px solid #1E1E1E",overflow:"hidden"}}>
+          {filtered.map((p,i)=>{
+            const serName=series.find(s=>s.id===p.seriesId)?.name||"—";
+            const chrName=chars.find(c=>c.id===p.characterId)?.name||"";
+            return (
+              <div key={p.id} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 16px",borderBottom:i<filtered.length-1?"1px solid #1E1E1E":"none"}}>
+                <div style={{flex:1}}>
+                  <span style={{fontWeight:600,fontSize:12,color:"rgba(50,40,30,0.85)"}}>{serName}</span>
+                  {p.spec&&<><span style={{color:"rgba(50,40,30,0.15)",margin:"0 6px"}}>·</span><span style={{fontSize:12,color:"rgba(50,40,30,0.5)"}}>{p.spec}</span></>}
+                  {chrName&&<><span style={{color:"rgba(50,40,30,0.15)",margin:"0 6px"}}>·</span><span style={{fontSize:12,color:"rgba(50,40,30,0.35)"}}>{chrName}</span></>}
+                </div>
+                <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:14,fontWeight:600,color:"#5B8DB8",minWidth:56,textAlign:"right"}}>
+                  {p.price?`$${parseFloat(p.price).toFixed(0)}`:"—"}</div>
+                <div style={{display:"flex",gap:5}}>
+                  <Btn onClick={()=>startEdit(p)}>編輯</Btn>
+                  <Btn danger onClick={()=>del(p.id)}>✕</Btn>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      }
+    </div>
+  );
+}
+
+/* ════ 包材成本 ════ */
+function PackagingView({pkgs,savePkgs}) {
+  const [editing,setEditing]=useState(null);
+  const [form,setForm]=useState(EMPTY_PKG());
+  const sf=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const total=pkgs.reduce((s,p)=>s+(parseFloat(p.amount)||0),0);
+  const startNew=()=>{setForm({...EMPTY_PKG(),date:new Date().toISOString().slice(0,10)});setEditing("new");};
+  const startEdit=p=>{setForm({...p});setEditing(p.id);};
+  const cancel=()=>{setEditing(null);setForm(EMPTY_PKG());};
+  const save=()=>{
+    if(!form.name.trim()){alert("請填寫包材名稱");return;}
+    if(editing==="new") savePkgs([...pkgs,{...form,id:mkId(),createdAt:new Date().toISOString()}]);
+    else savePkgs(pkgs.map(p=>p.id===editing?{...form}:p));
+    cancel();
+  };
+  const del=id=>{if(!window.confirm("確定刪除此紀錄？"))return; savePkgs(pkgs.filter(p=>p.id!==id));};
+  const inp={padding:"7px 10px",border:"none",borderBottom:"1px solid #2A2A2A",fontSize:12,outline:"none",color:"rgba(50,40,30,0.78)",background:"transparent",width:"100%"};
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18}}>
+        <PageHeader title="包材成本" sub="每次購買記一筆，計入毛利計算"/>
+        <GoldBtn onClick={startNew}>+ 新增紀錄</GoldBtn>
+      </div>
+      <div style={{background:"#FFFCF7",border:"1px solid #1E1E1E",padding:"12px 20px",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <span style={{fontSize:9,color:"rgba(91,141,184,0.45)",letterSpacing:"2px",textTransform:"uppercase"}}>包材總成本</span>
+        <span style={{fontFamily:"'Cormorant Garamond',serif",fontSize:22,fontWeight:600,color:"#5B8DB8"}}>${total.toFixed(0)}</span>
+      </div>
+      {editing&&(
+        <div style={{background:"#FFFCF7",border:"1px solid #2A2A2A",padding:"14px 16px",marginBottom:12}}>
+          <div style={{fontSize:9,color:"rgba(91,141,184,0.65)",letterSpacing:"2px",textTransform:"uppercase",marginBottom:12}}>{editing==="new"?"新增包材紀錄":"編輯紀錄"}</div>
+          <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:10,marginBottom:10}}>
+            {[{k:"name",label:"包材名稱",ph:"e.g. 氣泡袋 A4"},{k:"amount",label:"金額",ph:"0",type:"number"},{k:"date",label:"購買日期",type:"date"}].map(f=>(
+              <div key={f.k}>
+                <div style={{fontSize:9,color:"rgba(91,141,184,0.45)",letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:4}}>{f.label}</div>
+                <input type={f.type||"text"} value={form[f.k]} onChange={e=>sf(f.k,e.target.value)} placeholder={f.ph||""} style={inp}/>
+              </div>
+            ))}
+          </div>
+          <div style={{marginBottom:10}}>
+            <div style={{fontSize:9,color:"rgba(91,141,184,0.45)",letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:4}}>備註</div>
+            <input value={form.notes} onChange={e=>sf("notes",e.target.value)} placeholder="數量、購買來源…" style={inp}/>
+          </div>
+          <div style={{display:"flex",gap:8}}><Btn onClick={cancel}>取消</Btn><Btn dark onClick={save}>儲存</Btn></div>
+        </div>
+      )}
+      {pkgs.length===0?<Empty>尚無包材紀錄</Empty>
+        :<div style={{background:"#FFFCF7",border:"1px solid #1E1E1E",overflow:"hidden"}}>
+          {[...pkgs].sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).map((p,i)=>(
+            <div key={p.id} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 16px",borderBottom:i<pkgs.length-1?"1px solid #1E1E1E":"none"}}>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:600,fontSize:12,color:"rgba(50,40,30,0.85)"}}>{p.name}</div>
+                {(p.notes||p.date)&&<div style={{fontSize:10,color:"rgba(50,40,30,0.25)",marginTop:1}}>{p.date} {p.notes}</div>}
+              </div>
+              <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:15,fontWeight:600,color:"#5B8DB8"}}>${(parseFloat(p.amount)||0).toFixed(0)}</div>
+              <div style={{display:"flex",gap:5}}><Btn onClick={()=>startEdit(p)}>編輯</Btn><Btn danger onClick={()=>del(p.id)}>✕</Btn></div>
+            </div>
+          ))}
+        </div>}
+    </div>
+  );
+}
+
+/* ════ 客戶訂單 Modal ════ */
+function CoModal({order,products,chars,series,expandProduct,onSave,onClose}) {
+  const isEdit=!!order?.id;
+  const [form,setForm]=useState(()=>order?{...order,items:(order.items||[]).map(i=>({...i}))}:EMPTY_CO());
+  const [productSearch,setProductSearch]=useState({});
+  const sf=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const updateItem=(id,k,v)=>setForm(f=>({...f,items:f.items.map(i=>i.id===id?{...i,[k]:v}:i)}));
+  const addItem=()=>setForm(f=>({...f,items:[...f.items,EMPTY_CO_ITEM()]}));
+  const removeItem=id=>setForm(f=>({...f,items:f.items.filter(i=>i.id!==id)}));
+  const selectProduct=(itemId,product)=>{
+    const serName=series.find(s=>s.id===product.seriesId)?.name||"";
+    const chrName=chars.find(c=>c.id===product.characterId)?.name||"";
+    setForm(f=>({...f,items:f.items.map(i=>i.id===itemId?{...i,productId:product.id,series:serName,spec:product.spec,character:chrName,price:product.price}:i)}));
+    setProductSearch(ps=>({...ps,[itemId]:""}));
+  };
+  const handleSave=()=>{if(!form.customerIG.trim()){alert("請填寫 IG 帳號");return;} onSave({...form});};
+  const inp={padding:"8px 10px",border:"none",borderBottom:"1px solid #2A2A2A",fontSize:12,outline:"none",color:"rgba(50,40,30,0.85)",background:"transparent",width:"100%"};
+  const lbl={fontSize:9,fontWeight:600,color:"rgba(91,141,184,0.5)",marginBottom:4,display:"block",letterSpacing:"1.5px",textTransform:"uppercase"};
+  return (
+    <Overlay onClose={onClose} wide>
+      <ModalHeader title={isEdit?"編輯客戶訂單":"新增客戶訂單"} onClose={onClose}/>
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        <FormSection title="客戶資料">
+          <div>
+            <label style={lbl}>IG 帳號 *</label>
+            <input value={form.customerIG} onChange={e=>sf("customerIG",e.target.value)} placeholder="@handle" style={inp}/>
+          </div>
+        </FormSection>
+        <FormSection title={`商品（${form.items.length} 件）`} action={
+          <button onClick={addItem} style={{fontSize:11,color:"#5B8DB8",background:"rgba(91,141,184,0.09)",border:"1px solid rgba(201,168,76,0.25)",padding:"3px 8px",fontWeight:600}}>+ 新增</button>}>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {form.items.map((item)=>{
+              const pSearch=productSearch[item.id]||"";
+              const displayVal=pSearch||(item.series||item.spec||item.character?[item.series,item.spec,item.character].filter(Boolean).join(" · "):"");
+              const suggestions=pSearch.length>0?products.filter(p=>{
+                const s=series.find(s=>s.id===p.seriesId)?.name||"";
+                const c=chars.find(c=>c.id===p.characterId)?.name||"";
+                return [s,p.spec,c].some(x=>x?.toLowerCase().includes(pSearch.toLowerCase()));
+              }).slice(0,6):[];
+              const itemTotal=parseFloat(item.price)*parseInt(item.qty||1)||0;
+              return (
+                <div key={item.id} style={{background:"#F5F0E8",border:"1px solid #1E1E1E",padding:"10px"}}>
+                  <div style={{display:"flex",gap:8,alignItems:"flex-end",marginBottom:6}}>
+                    <div style={{flex:3,position:"relative"}}>
+                      <div style={{fontSize:9,color:"rgba(91,141,184,0.5)",letterSpacing:"1px",textTransform:"uppercase",marginBottom:3}}>搜尋商品</div>
+                      <input value={displayVal} onChange={e=>setProductSearch(ps=>({...ps,[item.id]:e.target.value}))} onFocus={e=>setProductSearch(ps=>({...ps,[item.id]:e.target.value||""})) } placeholder="輸入系列 / 角色…" style={{...inp,fontSize:12}}/>
+                      {suggestions.length>0&&(
+                        <div style={{position:"absolute",top:"100%",left:0,right:0,background:"#F0EBE0",border:"1px solid #2A2A2A",zIndex:100,boxShadow:"0 8px 24px rgba(0,0,0,0.5)"}}>
+                          {suggestions.map(p=>{
+                            const s=series.find(s=>s.id===p.seriesId)?.name||"";
+                            const c=chars.find(c=>c.id===p.characterId)?.name||"";
+                            return <div key={p.id} onClick={()=>selectProduct(item.id,p)}
+                              style={{padding:"8px 12px",fontSize:12,cursor:"pointer",borderBottom:"1px solid #1E1E1E",display:"flex",justifyContent:"space-between",color:"rgba(50,40,30,0.72)"}}
+                              onMouseEnter={e=>e.currentTarget.style.background="#EDE8DE"}
+                              onMouseLeave={e=>e.currentTarget.style.background="#F0EBE0"}>
+                              <span>{[s,p.spec,c].filter(Boolean).join(" · ")}</span>
+                              {p.price&&<span style={{fontFamily:"'Cormorant Garamond',serif",color:"#5B8DB8",fontWeight:600}}>${parseFloat(p.price).toFixed(0)}</span>}
+                            </div>;
+                          })}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:9,color:"rgba(91,141,184,0.5)",letterSpacing:"1px",textTransform:"uppercase",marginBottom:3}}>售價</div>
+                      <input type="number" value={item.price} onChange={e=>updateItem(item.id,"price",e.target.value)} placeholder="0" style={{...inp,fontSize:12}}/>
+                    </div>
+                    <div style={{width:60}}>
+                      <div style={{fontSize:9,color:"rgba(91,141,184,0.5)",letterSpacing:"1px",textTransform:"uppercase",marginBottom:3}}>數量</div>
+                      <input type="number" min={1} value={item.qty} onChange={e=>updateItem(item.id,"qty",e.target.value)} style={{...inp,fontSize:12}}/>
+                    </div>
+                    <div style={{textAlign:"right",minWidth:56,paddingBottom:6}}>
+                      <div style={{fontSize:9,color:"rgba(91,141,184,0.45)"}}>小計</div>
+                      <div style={{fontFamily:"'Cormorant Garamond',serif",fontWeight:600,color:"#5B8DB8",fontSize:14}}>${itemTotal.toFixed(0)}</div>
+                    </div>
+                    {form.items.length>1&&<button onClick={()=>removeItem(item.id)} style={{border:"1px solid rgba(200,60,60,0.3)",background:"transparent",color:"rgba(180,60,60,0.7)",width:22,height:22,fontSize:12,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {form.items.length>0&&(
+            <div style={{display:"flex",justifyContent:"flex-end",paddingTop:8}}>
+              <span style={{fontSize:11,color:"rgba(50,40,30,0.3)",letterSpacing:"1px",textTransform:"uppercase"}}>合計</span>
+              <span style={{fontFamily:"'Cormorant Garamond',serif",fontWeight:600,fontSize:18,color:"#5B8DB8",marginLeft:8}}>
+                ${form.items.reduce((s,i)=>s+(parseFloat(i.price)*parseInt(i.qty||1)||0),0).toFixed(0)}</span>
+            </div>
+          )}
+        </FormSection>
+        <FormSection title="備註">
+          <textarea value={form.notes} onChange={e=>sf("notes",e.target.value)} placeholder="特殊需求、尺寸、顏色偏好…" rows={2}
+            style={{...inp,resize:"vertical",lineHeight:1.6}}/>
+        </FormSection>
+        <div style={{display:"flex",gap:10}}><Btn full onClick={onClose}>取消</Btn><Btn full dark onClick={handleSave}>{isEdit?"儲存變更":"建立訂單"}</Btn></div>
+      </div>
+    </Overlay>
+  );
+}
+
+/* ════ 預購訂單 Modal ════ */
+function PoModal({po,cos,expandProduct,onSave,onClose}) {
+  const isEdit=!!po?.id;
+  const [form,setForm]=useState(()=>po?{...po,linkedItems:[...(po.linkedItems||[])]}:EMPTY_PO());
+  const sf=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const toggleItem=(coId,itemId)=>setForm(f=>{
+    const exists=f.linkedItems.find(li=>li.coId===coId&&li.itemId===itemId);
+    return {...f,linkedItems:exists?f.linkedItems.filter(li=>!(li.coId===coId&&li.itemId===itemId)):[...f.linkedItems,{coId,itemId}]};
+  });
+  const handleSave=()=>{if(!form.name.trim()){alert("請填寫預購單名稱");return;} onSave({...form});};
+  const inp={padding:"8px 10px",border:"none",borderBottom:"1px solid #2A2A2A",fontSize:12,outline:"none",color:"rgba(50,40,30,0.85)",background:"transparent",width:"100%"};
+  const lbl={fontSize:9,fontWeight:600,color:"rgba(91,141,184,0.5)",marginBottom:4,display:"block",letterSpacing:"1.5px",textTransform:"uppercase"};
+  const eligibleCos=cos.filter(c=>(c.items||[]).some(i=>i.status==="pending"||(i.poId&&i.poId===po?.id)));
+  return (
+    <Overlay onClose={onClose} wide>
+      <ModalHeader title={isEdit?"編輯預購訂單":"新增預購訂單"} onClose={onClose}/>
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        <FormSection title="預購資訊">
+          <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:10}}>
+            <div><label style={lbl}>預購單名稱 *</label><input value={form.name} onChange={e=>sf("name",e.target.value)} placeholder="e.g. BT21 春季 2025 批次" style={inp}/></div>
+            <div><label style={lbl}>刷卡金額</label><input type="number" value={form.cardAmount} onChange={e=>sf("cardAmount",e.target.value)} placeholder="0" style={inp}/></div>
+          </div>
+        </FormSection>
+        <FormSection title={`串聯客戶商品行（已選 ${form.linkedItems.length} 件）`}>
+            ?<div style={{fontSize:12,color:"rgba(50,40,30,0.2)",padding:"8px 0"}}>尚無可串聯的客戶訂單商品（商品需處於「待訂購」狀態）</div>
+            :<div style={{maxHeight:260,overflow:"auto",display:"flex",flexDirection:"column",gap:6}}>
+              {eligibleCos.map(co=>(
+                <div key={co.id}>
+                  <div style={{fontSize:9,fontWeight:600,color:"rgba(91,141,184,0.45)",marginBottom:4,letterSpacing:"1.5px",textTransform:"uppercase"}}>@{co.customerIG||"?"}</div>
+                  {(co.items||[]).filter(i=>i.status==="pending"||(i.poId===po?.id)).map(item=>{
+                    const checked=form.linkedItems.some(li=>li.coId===co.id&&li.itemId===item.id);
+                    return (
+                      <label key={item.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",
+                        background:checked?"rgba(91,141,184,0.08)":"transparent",cursor:"pointer",
+                        border:checked?"1px solid rgba(201,168,76,0.4)":"1px solid #1E1E1E",marginBottom:4}}>
+                        <input type="checkbox" checked={checked} onChange={()=>toggleItem(co.id,item.id)} style={{width:15,height:15,flexShrink:0,accentColor:"#5B8DB8"}}/>
+                        <div style={{flex:1,fontSize:12,color:"rgba(50,40,30,0.72)"}}>
+                          {[item.series,item.spec,item.character].filter(Boolean).join(" · ")||"商品"}
+                          <span style={{color:"rgba(50,40,30,0.2)"}}> ×{item.qty||1}</span>
+                        </div>
+                        {item.price&&<span style={{fontFamily:"'Cormorant Garamond',serif",fontWeight:600,fontSize:13,color:"#5B8DB8"}}>${(parseFloat(item.price)*parseInt(item.qty||1)||0).toFixed(0)}</span>}
+                      </label>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>}
+        </FormSection>
+        <FormSection title="備註">
+          <textarea value={form.notes} onChange={e=>sf("notes",e.target.value)} placeholder="供應商資訊、批次備注…" rows={2}
+            style={{...inp,resize:"vertical",lineHeight:1.6}}/>
+        </FormSection>
+        <div style={{display:"flex",gap:10}}><Btn full onClick={onClose}>取消</Btn><Btn full dark onClick={handleSave}>{isEdit?"儲存變更":"建立預購單"}</Btn></div>
+      </div>
+    </Overlay>
+  );
+}
+
+/* ════ 運送單 Modal ════ */
+function ShipModal({ship,pos,ships,onSave,onClose}) {
+  const isEdit=!!ship?.id;
+  const [form,setForm]=useState(()=>ship?{...ship,poIds:[...(ship.poIds||[])]}:EMPTY_SHIP());
+  const sf=(k,v)=>setForm(f=>({...f,[k]:v}));
+  // 已被其他運送單佔用的 poIds（排除自己）
+  const usedPoIds=new Set(ships.filter(s=>s.id!==ship?.id).flatMap(s=>s.poIds||[]));
+  const togglePo=id=>{
+    if(usedPoIds.has(id)) return; // 鎖定，不能勾
+    setForm(f=>({...f,poIds:f.poIds.includes(id)?f.poIds.filter(i=>i!==id):[...f.poIds,id]}));
+  };
+  const handleSave=()=>{if(!form.name.trim()){alert("請填寫運送單名稱");return;} onSave({...form});};
+  const inp={padding:"8px 10px",border:"none",borderBottom:"1px solid #2A2A2A",fontSize:12,outline:"none",color:"rgba(50,40,30,0.85)",background:"transparent",width:"100%"};
+  const lbl={fontSize:9,fontWeight:600,color:"rgba(91,141,184,0.5)",marginBottom:4,display:"block",letterSpacing:"1.5px",textTransform:"uppercase"};
+  return (
+    <Overlay onClose={onClose} wide>
+      <ModalHeader title={isEdit?"編輯運送單":"新增運送單"} onClose={onClose}/>
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        <FormSection title="運送資訊">
+          <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:10,marginBottom:10}}>
+            <div><label style={lbl}>運送單名稱 *</label><input value={form.name} onChange={e=>sf("name",e.target.value)} placeholder="e.g. 4月集運第一批" style={inp}/></div>
+            <div><label style={lbl}>運費</label><input type="number" value={form.shippingCost} onChange={e=>sf("shippingCost",e.target.value)} placeholder="0" style={inp}/></div>
+          </div>
+          <div>
+            <label style={lbl}>貨運狀態</label>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              {SHIP_STAGES.map(s=>(
+                <button key={s.id} onClick={()=>sf("stage",s.id)} style={{
+                  padding:"6px 12px",fontSize:12,fontWeight:600,cursor:"pointer",
+                  background:form.stage===s.id?"#5B8DB8":"rgba(50,40,30,0.05)",
+                  border:form.stage===s.id?"none":"1px solid #2A2A2A",
+                  color:form.stage===s.id?"#F5F0E8":"rgba(50,40,30,0.35)",
+                }}>{s.emoji} {s.label}</button>
+              ))}
+            </div>
+          </div>
+        </FormSection>
+        <FormSection title={`串聯預購訂單（已選 ${form.poIds.length} 筆）`}>
+          {pos.length===0?<div style={{fontSize:12,color:"rgba(50,40,30,0.2)",padding:"8px 0"}}>尚無預購訂單</div>
+            :<div style={{maxHeight:220,overflow:"auto",display:"flex",flexDirection:"column",gap:5}}>
+              {pos.map(p=>{
+                const checked=form.poIds.includes(p.id);
+                const locked=usedPoIds.has(p.id);
+                const poStage=getPOStage(p.stage);
+                const lockShip=locked?ships.find(s=>s.id!==ship?.id&&(s.poIds||[]).includes(p.id)):null;
+                return (
+                  <label key={p.id} onClick={()=>togglePo(p.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",
+                    background:checked?"rgba(91,141,184,0.08)":locked?"rgba(50,40,30,0.02)":"transparent",
+                    cursor:locked?"not-allowed":"pointer",
+                    border:checked?"1px solid rgba(201,168,76,0.4)":locked?"1px solid rgba(255,255,255,0.06)":"1px solid #1E1E1E",
+                    opacity:locked?0.45:1}}>
+                    <input type="checkbox" checked={checked} readOnly disabled={locked} style={{width:15,height:15,flexShrink:0,accentColor:"#5B8DB8"}}/>
+                    <div style={{flex:1,fontSize:12,fontWeight:600,color:locked?"rgba(50,40,30,0.35)":"rgba(50,40,30,0.78)"}}>{p.name||"未命名"}</div>
+                    {locked&&lockShip&&<span style={{fontSize:10,color:"rgba(50,40,30,0.25)"}}>已在「{lockShip.name||"運送單"}」</span>}
+                    {!locked&&<span style={{background:poStage.bg,color:poStage.color,fontSize:10,fontWeight:600,padding:"2px 8px"}}>{poStage.label}</span>}
+                    <span style={{fontFamily:"'Cormorant Garamond',serif",fontSize:13,fontWeight:600,color:locked?"rgba(50,40,30,0.2)":"#5B8DB8"}}>${(parseFloat(p.cardAmount)||0).toFixed(0)}</span>
+                  </label>
+                );
+              })}
+            </div>}
+        </FormSection>
+        <FormSection title="備註">
+          <textarea value={form.notes} onChange={e=>sf("notes",e.target.value)} placeholder="集運商資訊、追蹤號碼…" rows={2}
+            style={{...inp,resize:"vertical",lineHeight:1.6}}/>
+        </FormSection>
+        <div style={{display:"flex",gap:10}}><Btn full onClick={onClose}>取消</Btn><Btn full dark onClick={handleSave}>{isEdit?"儲存變更":"建立運送單"}</Btn></div>
+      </div>
+    </Overlay>
+  );
+}
+
+/* ════ 共用元件 ════ */
+function Overlay({children,onClose,wide}) {
+  return (
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"#FFFCF7",border:"1px solid #2A2A2A",width:"100%",maxWidth:wide?640:480,maxHeight:"92vh",overflow:"auto",padding:"24px 26px",boxShadow:"0 30px 80px rgba(0,0,0,0.7)"}}>
+        {children}
+      </div>
+    </div>
+  );
+}
+function ModalHeader({title,onClose}) {
+  return (
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+      <h2 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:20,fontWeight:600,color:"#5B8DB8",letterSpacing:"1px"}}>{title}</h2>
+      <button onClick={onClose} style={{border:"1px solid #2A2A2A",background:"transparent",width:28,height:28,fontSize:14,color:"rgba(50,40,30,0.3)",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+    </div>
+  );
+}
+function FormSection({title,children,action}) {
+  return (
+    <div style={{background:"#F5F0E8",border:"1px solid #1E1E1E",padding:"12px 14px"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+        <div style={{fontSize:9,fontWeight:700,color:"rgba(91,141,184,0.65)",letterSpacing:"2px",textTransform:"uppercase"}}>{title}</div>
+        {action}
+      </div>
+      {children}
+    </div>
+  );
+}
+function Btn({children,onClick,dark,danger,full}) {
+  return (
+    <button onClick={onClick} style={{
+      padding:full?"10px":"6px 10px",fontSize:full?13:12,fontWeight:600,whiteSpace:"nowrap",
+      border:danger?"1px solid rgba(200,60,60,0.3)":dark?"none":"1px solid #2A2A2A",
+      background:danger?"rgba(180,60,60,0.07)":dark?"#5B8DB8":"rgba(50,40,30,0.04)",
+      color:danger?"#CC5555":dark?"#F5F0E8":"rgba(50,40,30,0.4)",
+      ...(full?{flex:1}:{}),
+    }}>{children}</button>
+  );
+}
+function GoldBtn({children,onClick}) {
+  return <button onClick={onClick} style={{padding:"8px 16px",background:"#5B8DB8",color:"#FFFCF7",border:"none",fontWeight:700,fontSize:11,letterSpacing:"1.5px",textTransform:"uppercase"}}>{children}</button>;
+}
+function UnderlineInput({value,onChange,placeholder,style:sx}) {
+  return <input value={value} onChange={onChange} placeholder={placeholder}
+    style={{padding:"7px 0",border:"none",borderBottom:"1px solid #2A2A2A",fontSize:12,outline:"none",background:"transparent",color:"rgba(50,40,30,0.6)",...sx}}/>;
+}
+function PageHeader({title,sub}) {
+  return (
+    <div style={{marginBottom:18}}>
+      <h1 style={{fontFamily:"'Cormorant Garamond',serif",fontWeight:600,fontSize:26,color:"rgba(50,40,30,0.95)",letterSpacing:"0.5px"}}>{title}</h1>
+      {sub&&<p style={{color:"rgba(91,141,184,0.5)",fontSize:11,marginTop:4,letterSpacing:"0.5px"}}>{sub}</p>}
+    </div>
+  );
+}
+function SectionTitle({children}) {
+  return <h3 style={{fontSize:9,fontWeight:700,color:"rgba(91,141,184,0.55)",letterSpacing:"2.5px",textTransform:"uppercase"}}>{children}</h3>;
+}
+function Empty({children,small}) {
+  return (
+    <div style={{textAlign:"center",padding:small?"16px":"40px 20px"}}>
+      {!small&&<div style={{fontSize:28,marginBottom:6,opacity:0.2}}>◈</div>}
+      <div style={{fontSize:small?11:13,fontWeight:600,color:"rgba(255,255,255,0.12)",letterSpacing:"1px"}}>{children}</div>
+    </div>
+  );
+}
+
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(React.createElement(App));
+  </script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(()=>{});
+      });
+    }
+  </script>
+</body>
+</html>
