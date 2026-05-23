@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>yuchishopping代購</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#2B6CB0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="apple-touch-icon" href="https://img.icons8.com/flat-round/512/shopping-bag.png">
+  
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body style="margin:0; padding:0; background-color:#F7FAFC; color:#2D3748; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo } = React;
+
+    // 原版 PDF 核心輔助函式
+    const mkId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const fmtDate = s => s ? new Date(s).toLocaleDateString("zh-TW", { month: "short", day: "numeric" }) : "";
+
+    // 1. 狀態定義：保留原版 7 階段流程，配色升級為「現代柔和藍白與幾何質感」
+    const ITEM_STATUS = {
+      pending: { label: "待訂購", color: "#4A5568", bg: "#EDF2F7" },
+      ordered: { label: "已訂購", color: "#2B6CB0", bg: "#EBF8FF" },
+      packed: { label: "已打包", color: "#B7791F", bg: "#FEFCBF" },
+      shipped_from: { label: "已從集運寄出", color: "#553C9A", bg: "#EBF4FF" },
+      in_transit: { label: "等待配送", color: "#2C5282", bg: "#BEE3F8" },
+      arrived: { label: "已到貨", color: "#22543D", bg: "#C6F6D5" },
+      sent_to_client: { label: "已出貨給客人", color: "#2B6CB0", bg: "#EBF8FF" }
+    };
+
+    const SHIP_STAGES = [
+      { id: "packed", label: "已打包", emoji: "📦" },
+      { id: "shipped_from", label: "已從集運", emoji: "✈️" },
+      { id: "in_transit", label: "等待配送", emoji: "🚚" },
+      { id: "arrived", label: "已到貨", emoji: "✅" }
+    ];
+
+    const PO_STAGES = [
+      { id: "ordered", label: "已下單", emoji: "🛒", color: "#2B6CB0", bg: "#EBF8FF" },
+      { id: "paid", label: "已付款", emoji: "💳", color: "#553C9A", bg: "#EBF4FF" },
+      { id: "arrived", label: "已到貨", emoji: "🏢", color: "#22543D", bg: "#C6F6D5" },
+      { id: "done", label: "完成", emoji: "🎉", color: "#4A5568", bg: "#EDF2F7" }
+    ];
+
+    const getPOStage = id => PO_STAGES.find(s => s.id === id) || PO_STAGES[0];
+    const getShipStage = id => SHIP_STAGES.find(s => s.id === id) || SHIP_STAGES[0];
+    const getItemStatus = id => ITEM_STATUS[id] || ITEM_STATUS.pending;
+
+    // 2. 復原原版 PDF 自訂 UI 元件並重塑為藍白幾何風
+    function BlueBtn({ children, onClick, active, full }) {
+      return (
+        <button onClick={onClick} style={{
+          padding: "10px 18px",
+          background: active ? "#2B6CB0" : "white",
+          color: active ? "white" : "#4A5568",
+          border: active ? "1px solid #2B6CB0" : "1px solid #E2E8F0",
+          borderRadius: "12px",
+          fontWeight: "600",
+          fontSize: "13px",
+          letterSpacing: "0.5px",
+          cursor: "pointer",
+          boxShadow: active ? "0 4px 6px rgba(43,108,176,0.15)" : "0 2px 4px rgba(0,0,0,0.02)",
+          width: full ? "100%" : "auto",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "6px"
+        }}>{children}</button>
+      );
+    }
+
+    function ActionBtn({ children, onClick }) {
+      return (
+        <button onClick={onClick} style={{
+          padding: "8px 16px",
+          background: "#2B6CB0",
+          color: "white",
+          border: "none",
+          borderRadius: "10px",
+          fontWeight: "700",
+          fontSize: "12px",
+          boxShadow: "0 2px 5px rgba(43,108,176,0.2)",
+          cursor: "pointer"
+        }}>{children}</button>
+      );
+    }
+
+    function ModernInput({ value, onChange, placeholder, type = "text", style: sx }) {
+      return (
+        <input type={type} value={value} onChange={onChange} placeholder={placeholder}
+          style={{
+            padding: "10px 14px",
+            border: "1px solid #E2E8F0",
+            borderRadius: "10px",
+            fontSize: "13px",
+            outline: "none",
+            background: "white",
+            color: "#2D3748",
+            width: "100%",
+            boxSizing: "border-box",
+            ...sx
+          }}/>
+      );
+    }
+
+    function PageHeader({ title, sub }) {
+      return (
+        <div style={{ marginBottom: "20px", background: "white", padding: "18px 20px", borderRadius: "16px", border: "1px solid #E2E8F0" }}>
+          <h1 style={{ fontWeight: "800", fontSize: "22px", color: "#2B6CB0", margin: 0, letterSpacing: "0.3px" }}>{title}</h1>
+          {sub && <p style={{ color: "#718096", fontSize: "12px", marginTop: "4px", margin: "4px 0 0 0", fontWeight: "500" }}>{sub}</p>}
+        </div>
+      );
+    }
+
+    function SectionTitle({ children }) {
+      return <h3 style={{ fontSize: "15px", fontWeight: "700", color: "#2D3748", margin: "20px 0 10px 0", display: "flex", alignItems: "center", gap: "6px" }}>{children}</h3>;
+    }
+
+    // 3. 主程式：完美繼承原版 7 大核心資料 State 運作
+    function App() {
+      const [chars, setChars] = useState([]);
+      const [series, setSeries] = useState([]);
+      const [products, setProducts] = useState([]);
+      const [cos, setCos] = useState([]);
+      const [pos, setPos] = useState([]);
+      const [ships, setShips] = useState([]);
+      const [pkgs, setPkgs] = useState([]);
+      
+      const [view, setView] = useState("dashboard");
+      const [loading, setLoading] = useState(true);
+
+      // 各模組新增欄位的暫存狀態 (完全對應原版輸入邏輯)
+      const [ncName, setNcName] = useState("");
+      const [nsName, setNsName] = useState("");
+      const [npName, setNpName] = useState("");
+      const [npChar, setNpChar] = useState("");
+      const [npSeries, setNpSeries] = useState("");
+
+      const [ncoClient, setNcoClient] = useState("");
+      const [ncoNote, setNcoNote] = useState("");
+
+      // 讀取本地儲存空間資料
+      useEffect(() => {
+        const entries = [
+          ["of_chars", setChars], ["of_series", setSeries], ["of_products", setProducts],
+          ["of_cos", setCos], ["of_pos", setPos], ["of_ships", setShips], ["of_pkgs", setPkgs]
+        ];
+        entries.forEach(([k, fn]) => {
+          const r = localStorage.getItem(k);
+          if (r) fn(JSON.parse(r));
+        });
+        setLoading(false);
+      }, []);
+
+      const persist = (k, d) => localStorage.setItem(k, JSON.stringify(d));
+
+      const saveChars = d => { setChars(d); persist("of_chars", d); };
+      const saveSeries = d => { setSeries(d); persist("of_series", d); };
+      const saveProducts = d => { setProducts(d); persist("of_products", d); };
+      const saveCos = d => { setCos(d); persist("of_cos", d); };
+      const savePos = d => { setPos(d); persist("of_pos", d); };
+      const saveShips = d => { setShips(d); persist("of_ships", d); };
+      const savePkgs = d => { setPkgs(d); persist("of_pkgs", d); };
+
+      // 4. 財務精密計算法則 (100% 複製原版 PDF 公式)
+      const totalRevenue = useMemo(() => cos.reduce((s, c) => s + (c.items || []).reduce((ss, i) => ss + (parseFloat(i.price || 0) * parseInt(i.qty || 1)), 0), 0), [cos]);
+      const totalPoCost = useMemo(() => pos.reduce((s, p) => s + (parseFloat(p.cardAmount || 0)), 0), [pos]);
+      const totalShipCost = useMemo(() => ships.reduce((s, sh) => s + (parseFloat(sh.shippingCost || 0)), 0), [ships]);
+      const totalPkgCost = useMemo(() => pkgs.reduce((s, pk) => s + (parseFloat(pk.amount || 0)), 0), [pkgs]);
+      const totalCost = totalPoCost + totalShipCost + totalPkgCost;
+      const totalProfit = totalRevenue - totalCost;
+
+      // 5. 核心業務邏輯方法復原
+      const addChar = () => { if(ncName) { saveChars([...chars, {id:mkId(), name:ncName}]); setNcName(""); } };
+      const addSeries = () => { if(nsName) { saveSeries([...series, {id:mkId(), name:nsName}]); setNsName(""); } };
+      const addProduct = () => {
+        if(npName) {
+          saveProducts([...products, {id:mkId(), name:npName, charId:npChar, seriesId:npSeries}]);
+          setNpName("");
+        }
+      };
+      const addCo = () => {
+        if(ncoClient) {
+          saveCos([{id:mkId(), clientName:ncoClient, note:ncoNote, date:new Date().toISOString(), items:[]}, ...cos]);
+          setNcoClient(""); setNcoNote("");
+        }
+      };
+
+      if (loading) return <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#F7FAFC", color: "#2B6CB0", fontSize: "16px", fontWeight: "600" }}>yuchishopping 核心模組載入中...</div>;
+
+      // 行動端底部 5 大分頁導航
+      const NAV = [
+        { id: "dashboard", label: "控制台", icon: "📊" },
+        { id: "customer", label: "客戶訂單", icon: "👥" },
+        { id: "purchase", label: "採購單PO", icon: "🛒" },
+        { id: "shipment", label: "國際物流", icon: "🚚" },
+        { id: "baseData", label: "基本資料", icon: "📦" }
+      ];
+
+      return (
+        <div style={{ display: "flex", flexDirection: "column", height: "100vh", backgroundColor: "#F7FAFC" }}>
+          
+          {/* 主內容滑動區 */}
+          <main style={{ flex: 1, overflow: "auto", padding: "16px", paddingBottom: "30px" }}>
+            
+            {/* ==================== VIEW 1: 控制台 (Dashboard) ==================== */}
+            {view === "dashboard" && (
+              <div>
+                <PageHeader title="yuchishopping代購" sub="專屬 PWA 行動數據管理中心" />
+                
+                {/* 現代幾何漸層卡片 */}
+                <div style={{ background: "linear-gradient(135deg, #3182CE 0%, #2B6CB0 100%)", padding: "24px", borderRadius: "20px", color: "white", marginBottom: "16px", boxShadow: "0 8px 16px rgba(43,108,176,0.15)" }}>
+                  <div style={{ fontSize: "12px", opacity: 0.85, fontWeight: "600", letterSpacing: "1px" }}>預估總營業額 (REVENUE)</div>
+                  <div style={{ fontSize: "32px", fontWeight: "800", marginTop: "6px" }}>${totalRevenue.toLocaleString()}</div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px" }}>
+                  <div style={{ background: "white", padding: "18px", borderRadius: "16px", border: "1px solid #E2E8F0", boxShadow: "0 2px 4px rgba(0,0,0,0.01)" }}>
+                    <div style={{ fontSize: "12px", color: "#718096", fontWeight: "500" }}>加總總成本 (COST)</div>
+                    <div style={{ fontSize: "22px", fontWeight: "800", color: "#E53E3E", marginTop: "4px" }}>${totalCost.toLocaleString()}</div>
+                  </div>
+                  <div style={{ background: "white", padding: "18px", borderRadius: "16px", border: "1px solid #E2E8F0", boxShadow: "0 2px 4px rgba(0,0,0,0.01)" }}>
+                    <div style={{ fontSize: "12px", color: "#718096", fontWeight: "500" }}>預估總利潤 (PROFIT)</div>
+                    <div style={{ fontSize: "22px", fontWeight: "800", color: "#38A169", marginTop: "4px" }}>${totalProfit.toLocaleString()}</div>
+                  </div>
+                </div>
+
+                {/* 成本細分幾何區塊 */}
+                <div style={{ background: "white", padding: "20px", borderRadius: "16px", border: "1px solid #E2E8F0", marginBottom: "16px" }}>
+                  <h4 style={{ margin: "0 0 12px 0", color: "#2B6CB0", fontSize: "14px", fontWeight: "700" }}>📊 營運成本細分評估</h4>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "10px", fontSize: "13px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}><span>1. 國外採購卡費總額 (PO):</span><strong style={{ color: "#4A5568" }}>${totalPoCost.toLocaleString()}</strong></div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}><span>2. 國際集運總運費 (SHIP):</span><strong style={{ color: "#4A5568" }}>${totalShipCost.toLocaleString()}</strong></div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}><span>3. 其他國內外包材雜支 (PKG):</span><strong style={{ color: "#4A5568" }}>${totalPkgCost.toLocaleString()}</strong></div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ==================== VIEW 2: 客戶訂單 (Customer Orders) ==================== */}
+            {view === "customer" && (
+              <div>
+                <PageHeader title="👥 客戶訂單管理" sub="追蹤每位客戶的品項、金額與客製備註" />
+                
+                {/* 新增客戶訂單面板 */}
+                <div style={{ background: "white", padding: "18px", borderRadius: "16px", border: "1px solid #E2E8F0", marginBottom: "16px" }}>
+                  <SectionTitle>➕ 建立全新客戶訂單</SectionTitle>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                    <ModernInput value={ncoClient} onChange={e => setNcoClient(e.target.value)} placeholder="請輸入客戶姓名或代號 (必填)" />
+                    <ModernInput value={ncoNote} onChange={e => setNcoNote(e.target.value)} placeholder="輸入備註 (例如: 需外加禮盒、面交)" />
+                    <ActionBtn onClick={addCo}>儲存客戶訂單</ActionBtn>
+                  </div>
+                </div>
+
+                {/* 訂單清單展示 */}
+                <SectionTitle>📑 歷史與進行中訂單 ({cos.length})</SectionTitle>
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  {cos.map(c => (
+                    <div key={c.id} style={{ background: "white", padding: "16px", borderRadius: "14px", border: "1px solid #E2E8F0" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                        <span style={{ fontWeight: "700", fontSize: "16px", color: "#2B6CB0" }}>{c.clientName}</span>
+                        <span style={{ fontSize: "11px", color: "#A0AEC0" }}>{fmtDate(c.date)}</span>
+                      </div>
+                      {c.note && <div style={{ fontSize: "12px", background: "#F7FAFC", padding: "8px", borderRadius: "8px", color: "#718096", marginBottom: "10px" }}>✏️ {c.note}</div>}
+                      
+                      {/* 商品子品項操作介面 (原版功能復原) */}
+                      <div style={{ borderTop: "1px dashed #E2E8F0", paddingTop: "10px" }}>
+                        <div style={{ fontSize: "12px", fontWeight: "600", color: "#4A5568", marginBottom: "6px" }}>📦 內含商品明細:</div>
+                        <button onClick={() => {
+                          const pId = prompt("請輸入內含商品的商品ID或名稱:");
+                          const prc = prompt("請輸入售價:", "0");
+                          const q = prompt("請輸入數量:", "1");
+                          if(pId && prc) {
+                            const updatedItems = [...(c.items || []), { id: mkId(), productId: pId, price: prc, qty: q, status: "pending" }];
+                            saveCos(cos.map(x => x.id === c.id ? { ...x, items: updatedItems } : x));
+                          }
+                        }} style={{ background: "#EBF8FF", color: "#2B6CB0", border: "none", padding: "6px 12px", borderRadius: "6px", fontSize: "11px", fontWeight: "600", marginBottom: "8px", cursor:"pointer" }}>＋ 綁定商品品項</button>
+                        
+                        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                          {(c.items || []).map(it => (
+                            <div key={it.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#F7FAFC", padding: "6px 10px", borderRadius: "8px", fontSize: "12px" }}>
+                              <span>{it.productId} (x{it.qty})</span>
+                              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                                <strong style={{ color: "#2B6CB0" }}>${parseFloat(it.price)*parseInt(it.qty)}</strong>
+                                <select value={it.status} onChange={e => {
+                                  const nStatus = e.target.value;
+                                  const updated = c.items.map(x => x.id === it.id ? { ...x, status: nStatus } : x);
+                                  saveCos(cos.map(x => x.id === c.id ? { ...x, items: updated } : x));
+                                }} style={{ padding: "2px 4px", fontSize: "11px", borderRadius: "4px", border: "1px solid #CBD5E0" }}>
+                                  {Object.keys(ITEM_STATUS).map(k => <option key={k} value={k}>{ITEM_STATUS[k].label}</option>)}
+                                </select>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ==================== VIEW 3: 採購單管理 (PO) ==================== */}
+            {view === "purchase" && (
+              <div>
+                <PageHeader title="🛒 國外採購單 (PO) 控制" sub="記錄每批下單的境外付款卡費與扣款進度" />
+                <BlueBtn full onClick={() => savePos([{id: mkId(), poNo: "PO-"+Date.now().toString().slice(-4), cardAmount: 0, stage: "ordered"}, ...pos])}>
+                  ＋ 建立全新國外採購單編號
+                </BlueBtn>
+                
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginTop: "16px" }}>
+                  {pos.map(p => (
+                    <div key={p.id} style={{ background: "white", padding: "16px", borderRadius: "14px", border: "1px solid #E2E8F0" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+                        <strong style={{ fontSize: "15px", color: "#2D3748" }}>{p.poNo}</strong>
+                        <select value={p.stage} onChange={e => savePos(pos.map(x => x.id === p.id ? { ...x, stage: e.target.value } : x))} style={{ padding: "4px 8px", fontSize: "12px", borderRadius: "6px", border: "1px solid #E2E8F0" }}>
+                          {PO_STAGES.map(s => <option key={s.id} value={s.id}>{s.emoji} {s.label}</option>)}
+                        </select>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <span style={{ fontSize: "13px", color: "#718096" }}>國外扣卡金額 ($):</span>
+                        <ModernInput type="number" value={p.cardAmount || ""} onChange={e => savePos(pos.map(x => x.id === p.id ? { ...x, cardAmount: e.target.value } : x))} style={{ width: "120px" }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ==================== VIEW 4: 國際物流 (Shipments) ==================== */}
+            {view === "shipment" && (
+              <div>
+                <PageHeader title="🚚 國際集運與包材" sub="控管海外集運回台的運費與境內耗材" />
+                
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "16px" }}>
+                  <BlueBtn onClick={() => saveShips([{id: mkId(), shipNo: "SHIP-"+Date.now().toString().slice(-4), shippingCost: 0, stage: "packed"}, ...ships])}>＋ 建立集運單</BlueBtn>
+                  <BlueBtn onClick={() => savePkgs([{id: mkId(), name: "包材支出的項目", amount: 0}, ...pkgs])}>＋ 記包材雜支</BlueBtn>
+                </div>
+
+                <SectionTitle>✈️ 國際集運提單進度</SectionTitle>
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                  {ships.map(s => (
+                    <div key={s.id} style={{ background: "white", padding: "14px", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
+                        <strong>{s.shipNo}</strong>
+                        <select value={s.stage} onChange={e => saveShips(ships.map(x => x.id === s.id ? { ...x, stage: e.target.value } : x))}>
+                          {SHIP_STAGES.map(st => <option key={st.id} value={st.id}>{st.emoji} {st.label}</option>)}
+                        </select>
+                      </div>
+                      <ModernInput type="number" placeholder="國際運費總計" value={s.shippingCost || ""} onChange={e => saveShips(ships.map(x => x.id === s.id ? { ...x, shippingCost: e.target.value } : x))} />
+                    </div>
+                  ))}
+                </div>
+
+                <SectionTitle>📦 包材耗材與其他雜支</SectionTitle>
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                  {pkgs.map(pk => (
+                    <div key={pk.id} style={{ background: "white", padding: "14px", borderRadius: "12px", border: "1px solid #E2E8F0", display: "flex", gap: "10px" }}>
+                      <ModernInput value={pk.name} onChange={e => savePkgs(pkgs.map(x => x.id === pk.id ? { ...x, name: e.target.value } : x))} style={{ flex: 2 }} />
+                      <ModernInput type="number" placeholder="金額" value={pk.amount || ""} onChange={e => savePkgs(pkgs.map(x => x.id === pk.id ? { ...x, amount: e.target.value } : x))} style={{ flex: 1 }} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ==================== VIEW 5: 基本資料 (Base Data) ==================== */}
+            {view === "baseData" && (
+              <div>
+                <PageHeader title="📦 核心基本資料庫" sub="維護角色/IP、動漫作品系列與商品基本品項" />
+                
+                {/* 1. 角色管理 */}
+                <div style={{ background: "white", padding: "16px", borderRadius: "14px", border: "1px solid #E2E8F0", marginBottom: "16px" }}>
+                  <SectionTitle>👤 角色/IP 建立 ({chars.length})</SectionTitle>
+                  <div style={{ display: "flex", gap: "8px", marginBottom: "10px" }}>
+                    <ModernInput value={ncName} onChange={e => setNcName(e.target.value)} placeholder="例如: 五條悟、庫洛米" />
+                    <ActionBtn onClick={addChar}>新增</ActionBtn>
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                    {chars.map(c => <span key={c.id} style={{ background: "#EBF8FF", color: "#2B6CB0", padding: "4px 10px", borderRadius: "20px", fontSize: "12px", fontWeight: "600" }}>{c.name}</span>)}
+                  </div>
+                </div>
+
+                {/* 2. 系列管理 */}
+                <div style={{ background: "white", padding: "16px", borderRadius: "14px", border: "1px solid #E2E8F0", marginBottom: "16px" }}>
+                  <SectionTitle>🎬 作品系列維護 ({series.length})</SectionTitle>
+                  <div style={{ display: "flex", gap: "8px", marginBottom: "10px" }}>
+                    <ModernInput value={nsName} onChange={e => setNsName(e.target.value)} placeholder="例如: 咒術迴戰、三麗鷗" />
+                    <ActionBtn onClick={addSeries}>新增</ActionBtn>
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                    {series.map(s => <span key={s.id} style={{ background: "#EDF2F7", color: "#4A5568", padding: "4px 10px", borderRadius: "20px", fontSize: "12px", fontWeight: "600" }}>{s.name}</span>)}
+                  </div>
+                </div>
+
+                {/* 3. 商品主檔 */}
+                <div style={{ background: "white", padding: "16px", borderRadius: "14px", border: "1px solid #E2E8F0" }}>
+                  <SectionTitle>💎 商品品項主檔清單 ({products.length})</SectionTitle>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "12px" }}>
+                    <ModernInput value={npName} onChange={e => setNpName(e.target.value)} placeholder="商品全名 (例如: 20cm 坐姿絨毛娃娃)" />
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                      <select value={npChar} onChange={e => setNpChar(e.target.value)} style={{ padding: "10px", borderRadius: "10px", border: "1px solid #E2E8F0", fontSize: "12px" }}>
+                        <option value="">選擇關聯角色</option>
+                        {chars.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                      <select value={npSeries} onChange={e => setNpSeries(e.target.value)} style={{ padding: "10px", borderRadius: "10px", border: "1px solid #E2E8F0", fontSize: "12px" }}>
+                        <option value="">選擇關聯系列</option>
+                        {series.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                    </div>
+                    <ActionBtn onClick={addProduct}>登錄商品主檔</ActionBtn>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "6px", fontSize: "13px" }}>
+                    {products.map(p => (
+                      <div key={p.id} style={{ background: "#F7FAFC", padding: "8px 12px", borderRadius: "8px", display: "flex", justifyContent: "space-between" }}>
+                        <strong>{p.name}</strong>
+                        <span style={{ fontSize: "11px", color: "#A0AEC0" }}>ID: {p.id}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+          </main>
+
+          {/* 底部行動裝置專用導航 Tab Bar */}
+          <nav style={{ background: "white", borderTop: "1px solid #E2E8F0", display: "flex", height: "65px", paddingBottom: "env(safe-area-inset-bottom)", boxShadow: "0 -3px 10px rgba(0,0,0,0.02)", zIndex: 100 }}>
+            {NAV.map(n => {
+              const isAct = view === n.id;
+              return (
+                <button key={n.id} onClick={() => setView(n.id)} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "4px", color: isAct ? "#2B6CB0" : "#A0AEC0", border: "none", background: "none", transition: "color 0.15s" }}>
+                  <span style={{ fontSize: "19px" }}>{n.icon}</span>
+                  <span style={{ fontSize: "11px", fontWeight: isAct ? "700" : "500" }}>{n.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+
+        </div>
+      );
+    }
+
+    // 初始化與註冊 PWA 快取服務
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>
