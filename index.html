@@ -240,12 +240,12 @@ function App() {
   };
 
   const NAV = [
-    {id:"dashboard", label:"總覽"},
-    {id:"customer",  label:"客戶"},
-    {id:"purchase",  label:"預購"},
-    {id:"shipment",  label:"運送"},
-    {id:"products",  label:"商品"},
-    {id:"packaging", label:"包材"},
+    {id:"dashboard", label:"總覽",     icon:"📋"},
+    {id:"customer",  label:"客戶訂單", icon:"💌"},
+    {id:"purchase",  label:"預購訂單", icon:"🛍️"},
+    {id:"shipment",  label:"運送單",   icon:"📦"},
+    {id:"products",  label:"商品管理", icon:"🗂️"},
+    {id:"packaging", label:"包材成本", icon:"💰"},
   ];
 
   return (
@@ -302,8 +302,7 @@ function App() {
                 color:active?"#3A72A0":"rgba(50,40,30,0.62)",
                 transition:"all 0.15s",
               }}>
-                <Icon name={n.id} size={20} color={active?"#3A72A0":"rgba(50,40,30,0.62)"}/>
-                <span style={{fontSize:9,fontWeight:active?700:500,letterSpacing:"0.2px",whiteSpace:"nowrap"}}>{n.label}</span>
+                <span style={{fontSize:20,lineHeight:1}}>{n.icon}</span>                <span style={{fontSize:9,fontWeight:active?700:500,letterSpacing:"0.2px",whiteSpace:"nowrap"}}>{n.label}</span>
               </button>
             );
           })}
