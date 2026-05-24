@@ -1,4 +1,4 @@
-const CACHE = 'bts-daigou-v1';
+const CACHE = 'yuchishopping-daigou-v1';
 const ASSETS = [
   '/',
   '/index.html',
