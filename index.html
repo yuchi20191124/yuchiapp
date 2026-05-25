@@ -18,7 +18,7 @@
     html,body,#root{height:100%;margin:0;padding:0;background:#F5F0E8;}
     *{-webkit-tap-highlight-color:transparent;box-sizing:border-box;}
     ::placeholder{color:rgba(50,40,30,0.38);}
-    input,select,textarea{color-scheme:light;}
+    input,select,textarea{color-scheme:light;border-radius:12px;}
   </style>
 </head>
 <body>
@@ -263,7 +263,7 @@ function App() {
         select option{background:#F0EBE0;color:rgba(50,40,30,1.00)}
       `}</style>
 
-      <div style={{display:"flex",flexDirection:"column",height:"100vh",background:"#F5F0E8",overflow:"hidden"}}>
+      <div style={{display:"flex",flexDirection:"column",height:"100vh",background:"#F5F0E8",overflow:"hidden",borderRadius:18}}>
 
         {/* ── 頂部標題列 ── */}
         <header style={{background:"#EDE8DE",borderBottom:"1px solid #BEB8AE",padding:"14px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
@@ -272,9 +272,9 @@ function App() {
             <div style={{fontSize:10,color:"rgba(50,40,30,0.70)",letterSpacing:"2px",marginTop:3}}>代購管理系統</div>
           </div>
           <div style={{display:"flex",gap:6}}>
-            <button onClick={()=>setModal({type:"co",data:null})} style={{padding:"8px 14px",border:"none",background:"#3A72A0",color:"#ffffff",fontSize:12,fontWeight:700,borderRadius:8}}>
+            <button onClick={()=>setModal({type:"co",data:null})} style={{padding:"8px 14px",border:"none",background:"#3A72A0",color:"#ffffff",fontSize:12,fontWeight:700}}>
               ＋ 客戶</button>
-            <button onClick={()=>setModal({type:"po",data:null})} style={{padding:"8px 14px",border:"1.5px solid #3A72A0",background:"transparent",color:"#3A72A0",fontSize:12,fontWeight:600,borderRadius:8}}>
+            <button onClick={()=>setModal({type:"po",data:null})} style={{padding:"8px 14px",border:"1.5px solid #3A72A0",background:"transparent",color:"#3A72A0",fontSize:12,fontWeight:600,borderRadius:99}}>
               ＋ 預購</button>
           </div>
         </header>
@@ -291,18 +291,26 @@ function App() {
 
         {/* ── 底部 Tab Bar ── */}
         <nav style={{background:"#EDE8DE",borderTop:"1.5px solid #BEB8AE",display:"flex",flexShrink:0,paddingBottom:"env(safe-area-inset-bottom)"}}>
-          {NAV.map(n=>{
+          {[
+            {id:"dashboard", label:"總覽",     icon:"📋"},
+            {id:"customer",  label:"客戶訂單", icon:"💌"},
+            {id:"purchase",  label:"預購訂單", icon:"🛍️"},
+            {id:"shipment",  label:"運送單",   icon:"📦"},
+            {id:"products",  label:"商品管理", icon:"🗂️"},
+            {id:"packaging", label:"包材成本", icon:"💰"},
+          ].map(n=>{
             const active = view===n.id;
             return (
               <button key={n.id} onClick={()=>setView(n.id)} style={{
                 flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
-                gap:4,padding:"10px 2px 8px",border:"none",
+                gap:3,padding:"10px 2px 8px",border:"none",
                 borderTop:active?"2.5px solid #3A72A0":"2.5px solid transparent",
                 background:active?"rgba(58,114,160,0.07)":"transparent",
                 color:active?"#3A72A0":"rgba(50,40,30,0.62)",
                 transition:"all 0.15s",
               }}>
-                <span style={{fontSize:20,lineHeight:1}}>{n.icon}</span>                <span style={{fontSize:9,fontWeight:active?700:500,letterSpacing:"0.2px",whiteSpace:"nowrap"}}>{n.label}</span>
+                <span style={{fontSize:20,lineHeight:1}}>{n.icon}</span>
+                <span style={{fontSize:9,fontWeight:active?700:500,letterSpacing:"0.2px",whiteSpace:"nowrap"}}>{n.label}</span>
               </button>
             );
           })}
@@ -413,9 +421,9 @@ function CoCard({co,pos,onToggleOrdered,onMarkSent,onEdit,onDelete}) {
     return item?.poId?pos.find(p=>p.id===item.poId)||null:null;
   };
   return (
-    <div style={{background:"#FFFCF7",border:"1px solid #1E1E1E",overflow:"hidden"}}>
+    <div style={{background:"#FFFCF7",border:"1px solid #1E1E1E",overflow:"hidden",borderRadius:18}}>
       <div style={{padding:"12px 16px",display:"flex",alignItems:"center",gap:12}}>
-        <div style={{width:34,height:34,background:"#BEB8AE",border:"1px solid #2A2A2A",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:"#3A72A0",flexShrink:0}}>
+        <div style={{width:34,height:34,background:"#BEB8AE",border:"1.5px solid #BEB8AE",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:"#3A72A0",flexShrink:0}}>
           {(co.customerIG||"?").charAt(0).toUpperCase()}
         </div>
         <div style={{flex:1,minWidth:0}}>
@@ -475,7 +483,7 @@ function PreOrdersView({pos,cos,ships,onEdit,onDelete,onNew}) {
       <div style={{display:"flex",gap:12,marginBottom:16,flexWrap:"wrap",alignItems:"flex-end"}}>
         <UnderlineInput value={search} onChange={e=>setSearch(e.target.value)} placeholder="搜尋預購單名稱…" style={{width:220}}/>
         <select value={filter} onChange={e=>setFilter(e.target.value)}
-          style={{padding:"6px 10px",border:"none",borderBottom:"1px solid #2A2A2A",fontSize:12,background:"transparent",color:"rgba(50,40,30,0.92)",outline:"none"}}>
+          style={{padding:"6px 10px",border:"1.5px solid #BEB8AE",borderRadius:99,padding:"8px 12px",fontSize:12,background:"transparent",color:"rgba(50,40,30,0.92)",outline:"none"}}>
           <option value="all">全部狀態</option>
           {PO_STAGES.map(s=><option key={s.id} value={s.id}>{s.emoji} {s.label}</option>)}
         </select>
@@ -494,7 +502,7 @@ function PoCard({po,cos,ships,onEdit,onDelete}) {
   const ship=ships.find(s=>(s.poIds||[]).includes(po.id));
   const linkedItems=po.linkedItems||[];
   return (
-    <div style={{background:"#FFFCF7",border:"1px solid #1E1E1E",overflow:"hidden"}}>
+    <div style={{background:"#FFFCF7",border:"1px solid #1E1E1E",overflow:"hidden",borderRadius:18}}>
       <div style={{padding:"12px 16px",display:"flex",alignItems:"center",gap:12}}>
         <div style={{width:34,height:34,background:stage.bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>
           {stage.emoji}
@@ -562,7 +570,7 @@ function ShipCard({ship,pos,onEdit,onDelete,onStageChange}) {
   const stageBgs={packed:"rgba(58,114,160,0.11)",shipped_from:"rgba(140,100,255,0.08)",in_transit:"rgba(60,180,200,0.08)",arrived:"rgba(40,140,80,0.12)"};
   const curIdx=SHIP_STAGES.findIndex(s=>s.id===ship.stage);
   return (
-    <div style={{background:"#FFFCF7",border:"1px solid #1E1E1E",overflow:"hidden"}}>
+    <div style={{background:"#FFFCF7",border:"1px solid #1E1E1E",overflow:"hidden",borderRadius:18}}>
       <div style={{padding:"12px 16px",display:"flex",alignItems:"center",gap:12}}>
         <div style={{width:34,height:34,background:stageBgs[ship.stage]||"rgba(50,40,30,0.70)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>
           {st.emoji}
@@ -675,7 +683,7 @@ function LibraryEditor({title,items,save,placeholder}) {
   };
   const del=id=>{if(!window.confirm("確定刪除？"))return; save(items.filter(i=>i.id!==id));};
 
-  const inp={padding:"7px 10px",border:"none",borderBottom:"1px solid #2A2A2A",fontSize:12,outline:"none",color:"rgba(50,40,30,1.00)",background:"transparent",flex:1};
+  const inp={padding:"7px 10px",border:"1.5px solid #BEB8AE",borderRadius:99,padding:"8px 12px",fontSize:12,outline:"none",color:"rgba(50,40,30,1.00)",background:"transparent",flex:1};
 
   return (
     <div>
@@ -683,12 +691,12 @@ function LibraryEditor({title,items,save,placeholder}) {
         <span style={{fontSize:11,color:"rgba(50,40,30,0.87)",letterSpacing:"0.5px"}}>{items.length} 項</span>
         <div style={{display:"flex",gap:6}}>
           <button onClick={()=>{setMode(mode==="single"?null:"single");setBatchText("");}} style={{
-            padding:"6px 12px",fontSize:11,fontWeight:600,letterSpacing:"0.5px",border:"1px solid #2A2A2A",
+            padding:"6px 12px",fontSize:11,fontWeight:600,letterSpacing:"0.5px",border:"1.5px solid #BEB8AE",borderRadius:99,
             background:mode==="single"?"rgba(58,114,160,0.14)":"transparent",
             color:mode==="single"?"#3A72A0":"rgba(50,40,30,0.84)",
           }}>+ 新增</button>
           <button onClick={()=>{setMode(mode==="batch"?null:"batch");setName("");}} style={{
-            padding:"6px 12px",fontSize:11,fontWeight:600,letterSpacing:"0.5px",border:"1px solid #2A2A2A",
+            padding:"6px 12px",fontSize:11,fontWeight:600,letterSpacing:"0.5px",border:"1.5px solid #BEB8AE",borderRadius:99,
             background:mode==="batch"?"rgba(58,114,160,0.14)":"transparent",
             color:mode==="batch"?"#3A72A0":"rgba(50,40,30,0.84)",
           }}>批次新增</button>
@@ -697,7 +705,7 @@ function LibraryEditor({title,items,save,placeholder}) {
 
       {/* 單筆新增 */}
       {mode==="single"&&(
-        <div style={{background:"#FFFCF7",border:"1px solid #2A2A2A",padding:"12px 14px",marginBottom:10}}>
+        <div style={{background:"#FFFCF7",border:"1.5px solid #BEB8AE",padding:"12px 14px",marginBottom:10}}>
           <div style={{fontSize:9,color:"rgba(58,114,160,0.82)",letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:6}}>名稱（Enter 快速儲存）</div>
           <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
             <input value={name} onChange={e=>setName(e.target.value)} placeholder={placeholder} style={inp} autoFocus
@@ -711,7 +719,7 @@ function LibraryEditor({title,items,save,placeholder}) {
 
       {/* 批次新增 */}
       {mode==="batch"&&(
-        <div style={{background:"#FFFCF7",border:"1px solid #2A2A2A",padding:"12px 14px",marginBottom:10}}>
+        <div style={{background:"#FFFCF7",border:"1.5px solid #BEB8AE",borderRadius:99,padding:"12px 14px",marginBottom:10}}>
           <div style={{fontSize:9,color:"rgba(58,114,160,0.82)",letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:6}}>批次輸入（逗號或換行分隔）</div>
           <textarea value={batchText} onChange={e=>setBatchText(e.target.value)} placeholder={`例如：\nRJ\nKoya\nShooky\nMang\nChimmy\nTata\nVan`}
             rows={6} style={{...inp,flex:"none",width:"100%",resize:"vertical",lineHeight:1.6,fontFamily:"'DM Sans',sans-serif"}}
@@ -796,8 +804,8 @@ function ProductsEditor({chars,series,products,saveProducts,expandProduct}) {
     return [s,p.spec,c].some(x=>x.toLowerCase().includes(search.toLowerCase()));
   });
 
-  const selStyle={padding:"7px 10px",border:"none",borderBottom:"1px solid #2A2A2A",fontSize:12,outline:"none",color:"rgba(50,40,30,1.00)",background:"transparent",width:"100%"};
-  const inp={padding:"7px 10px",border:"none",borderBottom:"1px solid #2A2A2A",fontSize:12,outline:"none",color:"rgba(50,40,30,1.00)",background:"transparent",width:"100%"};
+  const selStyle={padding:"7px 10px",border:"1.5px solid #BEB8AE",borderRadius:99,padding:"8px 12px",fontSize:12,outline:"none",color:"rgba(50,40,30,1.00)",background:"transparent",width:"100%"};
+  const inp={padding:"7px 10px",border:"1.5px solid #BEB8AE",borderRadius:99,padding:"8px 12px",fontSize:12,outline:"none",color:"rgba(50,40,30,1.00)",background:"transparent",width:"100%"};
   const chipBtn=(active,onClick,label)=>(
     <button onClick={onClick} style={{padding:"5px 11px",fontSize:11,fontWeight:active?600:400,border:active?"1px solid rgba(201,168,76,0.6)":"1px solid #2A2A2A",
       background:active?"rgba(58,114,160,0.14)":"transparent",color:active?"#3A72A0":"rgba(50,40,30,0.84)",cursor:"pointer",whiteSpace:"nowrap"}}>
@@ -813,12 +821,12 @@ function ProductsEditor({chars,series,products,saveProducts,expandProduct}) {
         <UnderlineInput value={search} onChange={e=>setSearch(e.target.value)} placeholder="搜尋系列／規格／角色…" style={{width:240}}/>
         <div style={{display:"flex",gap:6}}>
           <button onClick={()=>setMode(mode==="single"&&!editingId?null:"single")} style={{
-            padding:"6px 12px",fontSize:11,fontWeight:600,letterSpacing:"0.5px",border:"1px solid #2A2A2A",
+            padding:"6px 12px",fontSize:11,fontWeight:600,letterSpacing:"0.5px",border:"1.5px solid #BEB8AE",borderRadius:99,
             background:mode==="single"?"rgba(58,114,160,0.14)":"transparent",
             color:mode==="single"?"#3A72A0":"rgba(50,40,30,0.84)",
           }}>+ 單筆</button>
           <button onClick={()=>setMode(mode==="combo"?null:"combo")} style={{
-            padding:"6px 12px",fontSize:11,fontWeight:600,letterSpacing:"0.5px",border:"1px solid #2A2A2A",
+            padding:"6px 12px",fontSize:11,fontWeight:600,letterSpacing:"0.5px",border:"1.5px solid #BEB8AE",
             background:mode==="combo"?"rgba(58,114,160,0.14)":"transparent",
             color:mode==="combo"?"#3A72A0":"rgba(50,40,30,0.84)",
           }}>組合批次</button>
@@ -827,7 +835,7 @@ function ProductsEditor({chars,series,products,saveProducts,expandProduct}) {
 
       {/* 單筆新增/編輯 */}
       {mode==="single"&&(
-        <div style={{background:"#FFFCF7",border:"1px solid #2A2A2A",padding:"14px 16px",marginBottom:12}}>
+        <div style={{background:"#FFFCF7",border:"1.5px solid #BEB8AE",borderRadius:99,padding:"14px 16px",marginBottom:12}}>
           <div style={{fontSize:9,color:"rgba(58,114,160,0.9)",letterSpacing:"2px",textTransform:"uppercase",marginBottom:12}}>
             {editingId?"編輯商品":"新增單筆商品"}</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10,marginBottom:12}}>
@@ -863,7 +871,7 @@ function ProductsEditor({chars,series,products,saveProducts,expandProduct}) {
 
       {/* 組合批次新增 */}
       {mode==="combo"&&(
-        <div style={{background:"#FFFCF7",border:"1px solid #2A2A2A",padding:"14px 16px",marginBottom:12}}>
+        <div style={{background:"#FFFCF7",border:"1.5px solid #BEB8AE",padding:"14px 16px",marginBottom:12}}>
           <div style={{fontSize:9,color:"rgba(58,114,160,0.9)",letterSpacing:"2px",textTransform:"uppercase",marginBottom:14}}>組合批次新增</div>
 
           {series.length===0
@@ -907,7 +915,7 @@ function ProductsEditor({chars,series,products,saveProducts,expandProduct}) {
                   if(combo.charIds.length===0) return [{sName,cName:"",spec:combo.spec}];
                   return combo.charIds.map(cId=>({sName,cName:chars.find(c=>c.id===cId)?.name||"",spec:combo.spec}));
                 }).map((row,i)=>(
-                  <span key={i} style={{fontSize:10,color:"rgba(50,40,30,0.90)",background:"rgba(50,40,30,0.70)",padding:"2px 8px",border:"1px solid #2A2A2A"}}>
+                  <span key={i} style={{fontSize:10,color:"rgba(50,40,30,0.90)",background:"rgba(50,40,30,0.70)",padding:"2px 8px",border:"1.5px solid #BEB8AE",borderRadius:99}}>
                     {[row.sName,row.spec,row.cName].filter(Boolean).join(" · ")}
                   </span>
                 ))}
@@ -968,7 +976,7 @@ function PackagingView({pkgs,savePkgs}) {
     cancel();
   };
   const del=id=>{if(!window.confirm("確定刪除此紀錄？"))return; savePkgs(pkgs.filter(p=>p.id!==id));};
-  const inp={padding:"7px 10px",border:"none",borderBottom:"1px solid #2A2A2A",fontSize:12,outline:"none",color:"rgba(50,40,30,1.00)",background:"transparent",width:"100%"};
+  const inp={padding:"7px 10px",border:"1.5px solid #BEB8AE",borderRadius:99,padding:"8px 12px",fontSize:12,outline:"none",color:"rgba(50,40,30,1.00)",background:"transparent",width:"100%"};
   return (
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18}}>
@@ -980,7 +988,7 @@ function PackagingView({pkgs,savePkgs}) {
         <span style={{fontFamily:"'Cormorant Garamond',serif",fontSize:22,fontWeight:600,color:"#3A72A0"}}>${total.toFixed(0)}</span>
       </div>
       {editing&&(
-        <div style={{background:"#FFFCF7",border:"1px solid #2A2A2A",padding:"14px 16px",marginBottom:12}}>
+        <div style={{background:"#FFFCF7",border:"1.5px solid #BEB8AE",borderRadius:99,padding:"14px 16px",marginBottom:12}}>
           <div style={{fontSize:9,color:"rgba(58,114,160,0.9)",letterSpacing:"2px",textTransform:"uppercase",marginBottom:12}}>{editing==="new"?"新增包材紀錄":"編輯紀錄"}</div>
           <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:10,marginBottom:10}}>
             {[{k:"name",label:"包材名稱",ph:"e.g. 氣泡袋 A4"},{k:"amount",label:"金額",ph:"0",type:"number"},{k:"date",label:"購買日期",type:"date"}].map(f=>(
@@ -1030,7 +1038,7 @@ function CoModal({order,products,chars,series,expandProduct,onSave,onClose}) {
     setProductSearch(ps=>({...ps,[itemId]:""}));
   };
   const handleSave=()=>{if(!form.customerIG.trim()){alert("請填寫 IG 帳號");return;} onSave({...form});};
-  const inp={padding:"8px 10px",border:"none",borderBottom:"1px solid #2A2A2A",fontSize:12,outline:"none",color:"rgba(50,40,30,1.00)",background:"transparent",width:"100%"};
+  const inp={padding:"8px 10px",border:"1.5px solid #BEB8AE",borderRadius:99,padding:"8px 12px",fontSize:12,outline:"none",color:"rgba(50,40,30,1.00)",background:"transparent",width:"100%"};
   const lbl={fontSize:9,fontWeight:600,color:"rgba(58,114,160,0.82)",marginBottom:4,display:"block",letterSpacing:"1.5px",textTransform:"uppercase"};
   return (
     <Overlay onClose={onClose} wide>
@@ -1061,7 +1069,7 @@ function CoModal({order,products,chars,series,expandProduct,onSave,onClose}) {
                       <div style={{fontSize:9,color:"rgba(58,114,160,0.82)",letterSpacing:"1px",textTransform:"uppercase",marginBottom:3}}>搜尋商品</div>
                       <input value={displayVal} onChange={e=>setProductSearch(ps=>({...ps,[item.id]:e.target.value}))} onFocus={e=>setProductSearch(ps=>({...ps,[item.id]:e.target.value||""})) } placeholder="輸入系列 / 角色…" style={{...inp,fontSize:12}}/>
                       {suggestions.length>0&&(
-                        <div style={{position:"absolute",top:"100%",left:0,right:0,background:"#F0EBE0",border:"1px solid #2A2A2A",zIndex:100,boxShadow:"0 8px 24px rgba(0,0,0,0.5)"}}>
+                        <div style={{position:"absolute",top:"100%",left:0,right:0,background:"#F0EBE0",border:"1.5px solid #BEB8AE",borderRadius:99,zIndex:100,boxShadow:"0 8px 24px rgba(0,0,0,0.5)"}}>
                           {suggestions.map(p=>{
                             const s=series.find(s=>s.id===p.seriesId)?.name||"";
                             const c=chars.find(c=>c.id===p.characterId)?.name||"";
@@ -1122,7 +1130,7 @@ function PoModal({po,cos,expandProduct,onSave,onClose}) {
     return {...f,linkedItems:exists?f.linkedItems.filter(li=>!(li.coId===coId&&li.itemId===itemId)):[...f.linkedItems,{coId,itemId}]};
   });
   const handleSave=()=>{if(!form.name.trim()){alert("請填寫預購單名稱");return;} onSave({...form});};
-  const inp={padding:"8px 10px",border:"none",borderBottom:"1px solid #2A2A2A",fontSize:12,outline:"none",color:"rgba(50,40,30,1.00)",background:"transparent",width:"100%"};
+  const inp={padding:"8px 10px",border:"1.5px solid #BEB8AE",borderRadius:99,padding:"8px 12px",fontSize:12,outline:"none",color:"rgba(50,40,30,1.00)",background:"transparent",width:"100%"};
   const lbl={fontSize:9,fontWeight:600,color:"rgba(58,114,160,0.82)",marginBottom:4,display:"block",letterSpacing:"1.5px",textTransform:"uppercase"};
   const eligibleCos=cos.filter(c=>(c.items||[]).some(i=>i.status==="pending"||(i.poId&&i.poId===po?.id)));
   return (
@@ -1183,7 +1191,7 @@ function ShipModal({ship,pos,ships,onSave,onClose}) {
     setForm(f=>({...f,poIds:f.poIds.includes(id)?f.poIds.filter(i=>i!==id):[...f.poIds,id]}));
   };
   const handleSave=()=>{if(!form.name.trim()){alert("請填寫運送單名稱");return;} onSave({...form});};
-  const inp={padding:"8px 10px",border:"none",borderBottom:"1px solid #2A2A2A",fontSize:12,outline:"none",color:"rgba(50,40,30,1.00)",background:"transparent",width:"100%"};
+  const inp={padding:"8px 10px",border:"1.5px solid #BEB8AE",borderRadius:99,padding:"8px 12px",fontSize:12,outline:"none",color:"rgba(50,40,30,1.00)",background:"transparent",width:"100%"};
   const lbl={fontSize:9,fontWeight:600,color:"rgba(58,114,160,0.82)",marginBottom:4,display:"block",letterSpacing:"1.5px",textTransform:"uppercase"};
   return (
     <Overlay onClose={onClose} wide>
@@ -1246,7 +1254,7 @@ function ShipModal({ship,pos,ships,onSave,onClose}) {
 function Overlay({children,onClose,wide}) {
   return (
     <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:20}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:"#FFFCF7",border:"1px solid #2A2A2A",width:"100%",maxWidth:wide?640:480,maxHeight:"92vh",overflow:"auto",padding:"24px 26px",boxShadow:"0 30px 80px rgba(0,0,0,0.7)"}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"#FFFCF7",border:"1.5px solid #BEB8AE",borderRadius:99,width:"100%",maxWidth:wide?640:480,maxHeight:"92vh",overflow:"auto",padding:"24px 26px",boxShadow:"0 30px 80px rgba(0,0,0,0.7)"}}>
         {children}
       </div>
     </div>
@@ -1256,7 +1264,7 @@ function ModalHeader({title,onClose}) {
   return (
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
       <h2 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:20,fontWeight:600,color:"#3A72A0",letterSpacing:"1px"}}>{title}</h2>
-      <button onClick={onClose} style={{border:"1px solid #2A2A2A",background:"transparent",width:28,height:28,fontSize:14,color:"rgba(50,40,30,0.84)",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+      <button onClick={onClose} style={{border:"1.5px solid #BEB8AE",borderRadius:99,background:"transparent",width:28,height:28,fontSize:14,color:"rgba(50,40,30,0.84)",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
     </div>
   );
 }
@@ -1287,7 +1295,7 @@ function GoldBtn({children,onClick}) {
 }
 function UnderlineInput({value,onChange,placeholder,style:sx}) {
   return <input value={value} onChange={onChange} placeholder={placeholder}
-    style={{padding:"7px 0",border:"none",borderBottom:"1px solid #2A2A2A",fontSize:12,outline:"none",background:"transparent",color:"rgba(50,40,30,0.92)",...sx}}/>;
+    style={{padding:"7px 0",border:"1.5px solid #BEB8AE",borderRadius:99,padding:"8px 12px",fontSize:12,outline:"none",background:"transparent",color:"rgba(50,40,30,0.92)",...sx}}/>;
 }
 function PageHeader({title,sub}) {
   return (
