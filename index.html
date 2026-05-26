@@ -102,38 +102,38 @@ function App() {
   const [modal,    setModal]   = useState(null);
   const [loading,  setLoading] = useState(true);
 
-useEffect(()=>{
-    (() => {
-      const entries = [
-        ["of_chars",    setChars],
-        ["of_series",   setSeries],
-        ["of_products", setProducts],
-        ["of_cos",      setCos],
-        ["of_pos",      setPos],
-        ["of_ships",    setShips],
-        ["of_pkgs",     setPkgs],
-      ];
-      for (const [k, fn] of entries) {
-        try { 
-          const localValue = localStorage.getItem(k); 
-          if (localValue) {
-            fn(JSON.parse(localValue)); 
-          }
-        } catch (e) {
-          console.error("載入 " + k + " 失敗:", e);
-        }
-      }
-      setLoading(false);
-    })();
-  },[]);
+useEffect(() => {
+  const entries = [
+    ["of_chars", setChars],
+    ["of_series", setSeries],
+    ["of_products", setProducts],
+    ["of_cos", setCos],
+    ["of_pos", setPos],
+    ["of_ships", setShips],
+    ["of_pkgs", setPkgs],
+  ];
 
- const persist = (k, d) => { 
-    try { 
-      localStorage.setItem(k, JSON.stringify(d)); 
+  entries.forEach(([key, setter]) => {
+    try {
+      const saved = localStorage.getItem(key);
+      if (saved) {
+        setter(JSON.parse(saved));
+      }
     } catch (e) {
-      console.error("寫入 " + k + " 失敗:", e);
-    } 
-  };;
+      console.error("讀取失敗:", key, e);
+    }
+  });
+
+  setLoading(false);
+}, []);
+
+const persist = (key, data) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch (e) {
+    console.error("儲存失敗:", key, e);
+  }
+};
   const saveChars    = d => { setChars(d);    persist("of_chars",d); };
   const saveSeries   = d => { setSeries(d);   persist("of_series",d); };
   const saveProducts = d => { setProducts(d); persist("of_products",d); };
