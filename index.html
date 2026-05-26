@@ -13,7 +13,7 @@
   <meta name="theme-color" content="#EDE8DE"/>
   <meta name="mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
-  <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
   <meta name="apple-mobile-web-app-title" content="yuchishopping"/>
   <title>yuchishopping 代購管理</title>
   <link rel="manifest" href="manifest.json"/>
@@ -22,7 +22,8 @@
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <style>
-    html,body,#root{height:100%;margin:0;padding:0;background:#F5F0E8;}
+    html,body,#root{height:100%;height:100dvh;margin:0;padding:0;background:#F5F0E8;}
+    #root{display:flex;flex-direction:column;overflow:hidden;}
     *{-webkit-tap-highlight-color:transparent;box-sizing:border-box;}
     ::placeholder{color:rgba(50,40,30,0.38);}
     input,select,textarea{color-scheme:light;border-radius:10px;}
