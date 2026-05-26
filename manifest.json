@@ -2,7 +2,7 @@
   "name": "yuchishopping 代購管理",
   "short_name": "yuchishopping",
   "description": "yuchishopping BTS / BT21 代購訂單管理系統",
-  "start_url": "/index.html",
+  "start_url": "/yuchiapp/",
   "display": "standalone",
   "background_color": "#F5F0E8",
   "theme_color": "#EDE8DE",
