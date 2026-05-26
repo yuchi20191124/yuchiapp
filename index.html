@@ -102,8 +102,8 @@ function App() {
   const [modal,    setModal]   = useState(null);
   const [loading,  setLoading] = useState(true);
 
-  useEffect(()=>{
-    (async()=>{
+useEffect(()=>{
+    (() => {
       const entries = [
         ["of_chars",    setChars],
         ["of_series",   setSeries],
@@ -113,14 +113,27 @@ function App() {
         ["of_ships",    setShips],
         ["of_pkgs",     setPkgs],
       ];
-      for (const [k,fn] of entries) {
-        try { const r = await window.storage.get(k); if(r?.value) fn(JSON.parse(r.value)); } catch {}
+      for (const [k, fn] of entries) {
+        try { 
+          const localValue = localStorage.getItem(k); 
+          if (localValue) {
+            fn(JSON.parse(localValue)); 
+          }
+        } catch (e) {
+          console.error("載入 " + k + " 失敗:", e);
+        }
       }
       setLoading(false);
     })();
   },[]);
 
-  const persist = async (k,d) => { try { await window.storage.set(k,JSON.stringify(d)); } catch {} };
+ const persist = (k, d) => { 
+    try { 
+      localStorage.setItem(k, JSON.stringify(d)); 
+    } catch (e) {
+      console.error("寫入 " + k + " 失敗:", e);
+    } 
+  };;
   const saveChars    = d => { setChars(d);    persist("of_chars",d); };
   const saveSeries   = d => { setSeries(d);   persist("of_series",d); };
   const saveProducts = d => { setProducts(d); persist("of_products",d); };
