@@ -24,13 +24,12 @@
   <style>
     html,body{height:100%;margin:0;padding:0;background:#F5F0E8;overflow:hidden;}
     #root{
-      height:100%;
-      height:100svh;
+      position:fixed;
+      top:0;left:0;right:0;bottom:0;
       display:flex;
       flex-direction:column;
       overflow:hidden;
-      padding-top:env(safe-area-inset-top);
-      padding-bottom:0;
+      background:#F5F0E8;
     }
     *{-webkit-tap-highlight-color:transparent;box-sizing:border-box;}
     ::placeholder{color:rgba(50,40,30,0.38);}
@@ -307,7 +306,7 @@ function App() {
         </main>
 
         {/* ── 底部 Tab Bar ── */}
-        <nav style={{background:"#EDE8DE",borderTop:"1.5px solid #BEB8AE",display:"flex",flexShrink:0,paddingBottom:"env(safe-area-inset-bottom)"}}>
+        <nav style={{background:"#EDE8DE",borderTop:"1.5px solid #BEB8AE",display:"flex",flexShrink:0,paddingBottom:"max(env(safe-area-inset-bottom), 8px)"}}>
           {[
             {id:"dashboard", label:"總覽",     icon:"📋"},
             {id:"customer",  label:"客戶訂單", icon:"💌"},
@@ -684,7 +683,8 @@ function LibraryEditor({title,items,save,placeholder}) {
     setName(""); // stay open for quick consecutive adds
   };
   const saveBatch=()=>{
-    const names=batchText.split(/[,，\n]/).map(s=>s.trim()).filter(Boolean);
+    const names=batchText.split(/[,，
+]/).map(s=>s.trim()).filter(Boolean);
     if(!names.length){alert("請輸入至少一個名稱");return;}
     const dupes=names.filter(n=>items.some(i=>i.name===n));
     const fresh=names.filter(n=>!items.some(i=>i.name===n));
@@ -738,12 +738,20 @@ function LibraryEditor({title,items,save,placeholder}) {
       {mode==="batch"&&(
         <div style={{background:"#FFFCF7",border:"1.5px solid #BEB8AE",borderRadius:12,padding:"12px 14px",marginBottom:10}}>
           <div style={{fontSize:9,color:"rgba(58,114,160,0.82)",letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:6}}>批次輸入（逗號或換行分隔）</div>
-          <textarea value={batchText} onChange={e=>setBatchText(e.target.value)} placeholder={`例如：\nRJ\nKoya\nShooky\nMang\nChimmy\nTata\nVan`}
+          <textarea value={batchText} onChange={e=>setBatchText(e.target.value)} placeholder={`例如：
+RJ
+Koya
+Shooky
+Mang
+Chimmy
+Tata
+Van`}
             rows={6} style={{...inp,flex:"none",width:"100%",resize:"vertical",lineHeight:1.6,fontFamily:"'DM Sans',sans-serif"}}
             autoFocus onKeyDown={e=>e.key==="Escape"&&cancelAll()}/>
           {batchText.trim()&&(
             <div style={{fontSize:10,color:"rgba(58,114,160,0.85)",marginTop:6}}>
-              將新增 {batchText.split(/[,，\n]/).map(s=>s.trim()).filter(Boolean).length} 個項目
+              將新增 {batchText.split(/[,，
+]/).map(s=>s.trim()).filter(Boolean).length} 個項目
             </div>
           )}
           <div style={{display:"flex",gap:8,marginTop:10}}>
