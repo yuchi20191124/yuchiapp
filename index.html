@@ -20,7 +20,7 @@
   <link rel="apple-touch-icon" href="icon-192.png"/>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/sucrase@3.35.0/dist/sucrase.min.js"></script>
   <style>
     html,body{height:100%;margin:0;padding:0;background:#F5F0E8;overflow:hidden;}
     #root{
@@ -41,7 +41,7 @@
 </head>
 <body>
   <div id="root"></div>
-  <script type="text/babel" data-presets="react">
+  <script id="app-source" type="text/plain">
 const { useState, useEffect, useMemo } = React;
 
 const mkId = () => Date.now().toString(36) + Math.random().toString(36).slice(2,6);
@@ -1342,8 +1342,21 @@ function Empty({children,small}) {
   );
 }
 
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(React.createElement(App));
+  </script>
+  <script>
+    (function() {
+      try {
+        const src = document.getElementById('app-source').textContent;
+        const compiled = sucrase.transform(src, {transforms:['jsx']}).code;
+        const fn = new Function('React','ReactDOM', compiled + '\nreturn App;');
+        const App = fn(React, ReactDOM);
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(React.createElement(App));
+      } catch(e) {
+        document.getElementById('root').innerHTML = '<div style="padding:40px;color:#333;font-family:sans-serif"><h2>載入失敗</h2><pre style="font-size:11px;overflow:auto">'+e.message+'</pre></div>';
+        console.error(e);
+      }
+    })();
   </script>
   <script>
     if ('serviceWorker' in navigator) {
