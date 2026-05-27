@@ -30,8 +30,6 @@
       flex-direction:column;
       overflow:hidden;
       background:#F5F0E8;
-      padding-top:47px;
-      padding-bottom:34px;
     }
     *{-webkit-tap-highlight-color:transparent;box-sizing:border-box;}
     ::placeholder{color:rgba(50,40,30,0.38);}
@@ -308,7 +306,7 @@ function App() {
         </main>
 
         {/* ── 底部 Tab Bar ── */}
-        <nav style={{background:"#EDE8DE",borderTop:"1.5px solid #BEB8AE",display:"flex",flexShrink:0,paddingBottom:"34px"}}>
+        <nav style={{background:"#EDE8DE",borderTop:"1.5px solid #BEB8AE",display:"flex",flexShrink:0,paddingBottom:"max(env(safe-area-inset-bottom), 8px)"}}>
           {[
             {id:"dashboard", label:"總覽",     icon:"📋"},
             {id:"customer",  label:"客戶訂單", icon:"💌"},
