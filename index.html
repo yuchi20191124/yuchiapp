@@ -103,21 +103,19 @@ function App() {
   const [loading,  setLoading] = useState(true);
 
   useEffect(()=>{
-    (async()=>{
-      const entries = [
-        ["of_chars",    setChars],
-        ["of_series",   setSeries],
-        ["of_products", setProducts],
-        ["of_cos",      setCos],
-        ["of_pos",      setPos],
-        ["of_ships",    setShips],
-        ["of_pkgs",     setPkgs],
-      ];
-      for (const [k,fn] of entries) {
-        try { const r = localStorage.getItem(k); if(r) fn(JSON.parse(r)); } catch {}
-      }
-      setLoading(false);
-    })();
+    const entries = [
+      ["of_chars",    setChars],
+      ["of_series",   setSeries],
+      ["of_products", setProducts],
+      ["of_cos",      setCos],
+      ["of_pos",      setPos],
+      ["of_ships",    setShips],
+      ["of_pkgs",     setPkgs],
+    ];
+    for (const [k,fn] of entries) {
+      try { const r = localStorage.getItem(k); if(r) fn(JSON.parse(r)); } catch {}
+    }
+    setLoading(false);
   },[]);
 
   const persist = (k,d) => { try { localStorage.setItem(k, JSON.stringify(d)); } catch {} };
